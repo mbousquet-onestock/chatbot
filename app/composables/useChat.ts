@@ -23,7 +23,7 @@ export interface ChatItem {
 
 /** Conversation avec /api/chat : l'historique brut (pour le modèle) est gardé à part de l'affichage. */
 export function useChat() {
-  const { state: os, refreshSession } = useOnestockContext();
+  const { state: os, apiFetch } = useOnestockContext();
 
   const history = ref<MessageParam[]>([]);
   const items = ref<ChatItem[]>([]);
@@ -43,17 +43,12 @@ export function useChat() {
     };
   }
 
-  async function post(payload: Record<string, unknown>, retried = false): Promise<Response> {
-    const res = await fetch("/api/chat", {
+  function post(payload: Record<string, unknown>): Promise<Response> {
+    return apiFetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${os.token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, messages: history.value, context: context() }),
     });
-    if (res.status === 401 && !retried) {
-      await refreshSession();
-      return post(payload, true);
-    }
-    return res;
   }
 
   async function run(payload: Record<string, unknown>) {

@@ -85,6 +85,21 @@ Variables d'environnement (voir `.env.example`) :
 | `ANTHROPIC_MODEL` | *Optionnel.* Défaut `claude-opus-5-5` |
 | `FRAME_ANCESTORS` | *Optionnel.* Origines autorisées à intégrer l'iframe (défaut : domaines OneStock) |
 
+### Onglet « Paramètres »
+
+L'interface a deux onglets : **Assistant** et **Paramètres**. L'onglet Paramètres (`GET /api/settings`,
+lecture seule, accessible à tout utilisateur de l'extension) affiche :
+
+- la session : site, utilisateur et extension issus de la signature ;
+- les connexions testées : base de données, API OneStock (recherche d'une commande) et API Claude (lecture du
+  modèle, sans consommer de tokens) ;
+- les lignes `onestock_token` / `onestock_api_root` retenues dans `settings` pour le site (portée, chiffrement) ;
+- chaque variable d'environnement : définie, manquante ou valeur par défaut.
+
+Les secrets ne sont jamais renvoyés au navigateur : seule leur présence est indiquée (et le nombre de clés pour
+`EXTENSION_SECRET_KEYS`). Pour `ALLOWED_SITE_IDS`, l'onglet indique seulement le nombre de sites et si le site
+courant en fait partie. Les valeurs se modifient dans Vercel (puis redéploiement) ou dans l'application Extensions.
+
 Requête utilisée pour la configuration (colonnes `key`, `value`, `environment`, `site_id`) :
 
 ```sql

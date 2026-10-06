@@ -5,6 +5,11 @@ const ready = computed(() => os.status === "ready");
 
 const { items, pending, busy, send, decide, reset } = useChat();
 const draft = ref("");
+const tab = ref<"chat" | "settings">("chat");
+const tabs = computed(() => [
+  { key: "chat", label: t.value.tabChat, icon: "message-outlined" },
+  { key: "settings", label: t.value.tabSettings, icon: "settings-outline" },
+]);
 const scroller = ref<HTMLElement>();
 const textarea = ref<HTMLTextAreaElement>();
 
@@ -68,7 +73,15 @@ onMounted(() => resize(Math.max(640, Math.round(window.screen.availHeight * 0.75
       </div>
     </header>
 
-    <main ref="scroller" class="conversation">
+    <nav v-if="ready" class="tabs">
+      <OsTabs v-model="tab" :tabs="tabs" />
+    </nav>
+
+    <main v-if="ready && tab === 'settings'" class="conversation">
+      <SettingsPanel :lang="os.context.lang" />
+    </main>
+
+    <main v-else ref="scroller" class="conversation">
       <div v-if="os.status === 'loading'" class="center">
         <OsIcon icon="loader" size="l" color="brand" />
         <span class="os-body-s os-text-secondary">{{ t.connecting }}</span>
@@ -104,7 +117,7 @@ onMounted(() => resize(Math.max(640, Math.round(window.screen.availHeight * 0.75
       </template>
     </main>
 
-    <footer class="composer">
+    <footer v-show="tab === 'chat'" class="composer">
       <div :class="['input', { disabled: !ready }]">
         <textarea
           ref="textarea"
@@ -141,6 +154,7 @@ onMounted(() => resize(Math.max(640, Math.round(window.screen.availHeight * 0.75
   border-radius: var(--os-radius-m); background: var(--os-surface-brand); color: #fff;
 }
 .header-actions { display: flex; align-items: center; gap: var(--os-spacing-s); min-width: 0; }
+.tabs { padding: var(--os-spacing-m) var(--os-spacing-xl); background: var(--os-surface-white); border-bottom: 1px solid var(--os-border-primary); }
 .conversation { flex: 1; overflow-y: auto; padding: var(--os-spacing-2xl) var(--os-spacing-xl); }
 .messages { display: flex; flex-direction: column; gap: var(--os-spacing-xl); max-width: 900px; margin: 0 auto; }
 .center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--os-spacing-m); }

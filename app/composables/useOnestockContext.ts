@@ -134,6 +134,19 @@ async function start() {
   }
 }
 
+/** Appel authentifié à l'API de l'extension, avec renouvellement de session sur 401. */
+async function apiFetch(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${state.token}` },
+  });
+  if (res.status === 401 && !retried) {
+    await openSession();
+    return apiFetch(path, init, true);
+  }
+  return res;
+}
+
 export function useOnestockContext() {
   if (import.meta.client && !started) {
     started = true;
@@ -143,6 +156,7 @@ export function useOnestockContext() {
     state: readonly(state),
     /** Nouveau JWT (expiré au bout d'une heure) à partir de la même signature, valable 6 h. */
     refreshSession: openSession,
+    apiFetch,
     /** Ajuste la hauteur de l'iframe (back-office uniquement). */
     resize: (height: number) => postToParent({ type: "extension_resize", height: Math.ceil(height) }),
     /** Ferme la modale des anchors d'action (bo.order.action, bo.orders.action). */
