@@ -80,7 +80,7 @@ Variables d'environnement (voir `.env.example`) :
 | `EXTENSION_SECRET_KEYS` | Secret(s) de l'extension fournis par OneStock, le plus récent d'abord |
 | `EXTENSION_ID` | *Optionnel.* Restreint à cet `extension_id` |
 | `ALLOWED_SITE_IDS` | *Recommandé.* Liste des `site_id` autorisés |
-| `JWT_SECRET` | *Optionnel.* Clé des sessions (dérivée de `SETTINGS_ENCRYPTION_KEY` sinon) |
+| `JWT_SECRET` | *Optionnel.* Clé des sessions (dérivée de `EXTENSION_SECRET_KEYS` sinon) |
 | `ANTHROPIC_API_KEY` | Clé API Claude |
 | `ANTHROPIC_MODEL` | *Optionnel.* Défaut `claude-opus-5-5` |
 | `FRAME_ANCESTORS` | *Optionnel.* Origines autorisées à intégrer l'iframe (défaut : domaines OneStock) |

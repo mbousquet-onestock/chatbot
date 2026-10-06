@@ -14,9 +14,9 @@ const SESSION_TTL = "1h";
 function jwtKey(): Uint8Array {
   const secret = process.env.JWT_SECRET?.trim();
   if (secret) return new TextEncoder().encode(secret);
-  // À défaut, dérivé de SETTINGS_ENCRYPTION_KEY pour ne pas multiplier les variables d'environnement.
-  const fallback = process.env.SETTINGS_ENCRYPTION_KEY?.trim();
-  if (!fallback) throw new Error("JWT_SECRET (or SETTINGS_ENCRYPTION_KEY) is not set");
+  // À défaut, dérivé du secret de l'extension (connu du seul serveur) pour ne pas multiplier les variables.
+  const fallback = process.env.EXTENSION_SECRET_KEYS?.split(",")[0]?.trim();
+  if (!fallback) throw new Error("JWT_SECRET (or EXTENSION_SECRET_KEYS) is not set");
   return createHash("sha256").update(`chatbot-jwt:${fallback}`).digest();
 }
 
