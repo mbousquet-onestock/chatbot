@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { requireSession } from "../utils/session";
-import { readSettingsRows } from "../utils/settings";
+import { databaseUrl, readSettingsRows } from "../utils/settings";
 import { onestockRequest } from "../utils/onestock";
 
 /** Une ligne de l'onglet Paramètres. Les secrets ne sont jamais renvoyés : seulement leur présence. */
@@ -54,7 +54,11 @@ export default defineEventHandler(async (event) => {
   const allowedSites = csv("ALLOWED_SITE_IDS");
 
   const environment: ConfigEntry[] = [
-    envEntry("DATABASE_URL", { required: true, secret: true }),
+    {
+      ...envEntry("DATABASE_URL", { required: true, secret: true }),
+      set: !!databaseUrl(),
+      note: !env("DATABASE_URL") && env("POSTGRES_URL") ? "POSTGRES_URL" : undefined,
+    },
     envEntry("SETTINGS_ENCRYPTION_KEY", { required: true, secret: true }),
     envEntry("ONESTOCK_ENVIRONMENT", { note: env("ONESTOCK_ENVIRONMENT") ? undefined : "all" }),
     envEntry("EXTENSION_ID"),
@@ -68,7 +72,8 @@ export default defineEventHandler(async (event) => {
     envEntry("ANTHROPIC_MODEL", { defaultValue: "claude-opus-5-5" }),
     envEntry("FRAME_ANCESTORS", { defaultValue: "'self' https://*.onestock-retail.com https://*.onestock-retail.dev" }),
   ];
-  if (!env("DATABASE_URL")) {
+  // Variables de développement local, affichées seulement si elles sont utilisées (pas de base).
+  if (!databaseUrl() && (env("ONESTOCK_API_ROOT") || env("ONESTOCK_TOKEN"))) {
     environment.push(envEntry("ONESTOCK_API_ROOT"), envEntry("ONESTOCK_TOKEN", { secret: true }));
   }
 

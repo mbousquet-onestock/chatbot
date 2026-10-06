@@ -11,10 +11,16 @@ const KEYS = ["onestock_token", "onestock_api_root"] as const;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { at: number; value: OnestockSettings }>();
 
+/** URL de la base : `DATABASE_URL` (Neon) ou `POSTGRES_URL` (intégration Vercel Postgres). */
+export function databaseUrl(): string | undefined {
+  return process.env.DATABASE_URL?.trim() || process.env.POSTGRES_URL?.trim() || undefined;
+}
+
 let sqlClient: ReturnType<typeof neon> | undefined;
 function sql() {
-  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set");
-  sqlClient ??= neon(process.env.DATABASE_URL);
+  const url = databaseUrl();
+  if (!url) throw new Error("DATABASE_URL (or POSTGRES_URL) is not set");
+  sqlClient ??= neon(url);
   return sqlClient;
 }
 
@@ -36,13 +42,13 @@ export interface SettingRow {
 /**
  * Lignes `onestock_token` et `onestock_api_root` applicables à un site, une par clé : la valeur propre au site
  * est prioritaire sur la valeur générique (`*` ou vide). `ONESTOCK_ENVIRONMENT`, si défini, filtre la colonne
- * `environment`. Sans `DATABASE_URL`, `ONESTOCK_API_ROOT` / `ONESTOCK_TOKEN` les remplacent (développement local).
+ * `environment`. Sans base, `ONESTOCK_API_ROOT` / `ONESTOCK_TOKEN` les remplacent (développement local).
  */
 export async function readSettingsRows(siteId: string): Promise<{ rows: SettingRow[]; fromEnv: boolean }> {
   const row = (key: string, value: string, site_id: string): SettingRow => ({
     key, value, site_id, encrypted: value.startsWith("enc:v1:"),
   });
-  if (!process.env.DATABASE_URL && process.env.ONESTOCK_API_ROOT && process.env.ONESTOCK_TOKEN) {
+  if (!databaseUrl() && process.env.ONESTOCK_API_ROOT && process.env.ONESTOCK_TOKEN) {
     return {
       fromEnv: true,
       rows: [row("onestock_token", process.env.ONESTOCK_TOKEN, "*"), row("onestock_api_root", process.env.ONESTOCK_API_ROOT, "*")],

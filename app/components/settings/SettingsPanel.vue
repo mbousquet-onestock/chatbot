@@ -55,6 +55,7 @@ function noteText(e: ConfigEntry): string {
   const n = e.note;
   if (!n) return "";
   if (n === "default") return t.value.defaultValue;
+  if (n === "POSTGRES_URL") return "POSTGRES_URL";
   if (n === "all") return t.value.allEnvironments;
   if (e.name === "ALLOWED_SITE_IDS") {
     const [count, current] = n.split("|");

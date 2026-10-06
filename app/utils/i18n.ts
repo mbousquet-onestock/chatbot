@@ -34,7 +34,7 @@ const fr = {
     envFallback: "pas de base : valeurs ONESTOCK_* de l'environnement",
     checkNames: { database: "Base de données", onestock: "API OneStock", anthropic: "API Claude" } as Record<string, string>,
     descriptions: {
-      DATABASE_URL: "Base Neon/Vercel contenant la table settings",
+      DATABASE_URL: "Base Neon/Vercel contenant la table settings (ou POSTGRES_URL)",
       SETTINGS_ENCRYPTION_KEY: "Déchiffrement des settings (même valeur que l'application Extensions)",
       ONESTOCK_ENVIRONMENT: "Filtre sur la colonne settings.environment",
       EXTENSION_ID: "N'accepter que cet extension_id",
@@ -144,7 +144,7 @@ const en: Dict = {
     envFallback: "no database: ONESTOCK_* values from the environment",
     checkNames: { database: "Database", onestock: "OneStock API", anthropic: "Claude API" },
     descriptions: {
-      DATABASE_URL: "Neon/Vercel database holding the settings table",
+      DATABASE_URL: "Neon/Vercel database holding the settings table (or POSTGRES_URL)",
       SETTINGS_ENCRYPTION_KEY: "Settings decryption (same value as the Extensions application)",
       ONESTOCK_ENVIRONMENT: "Filter on the settings.environment column",
       EXTENSION_ID: "Only accept this extension_id",
