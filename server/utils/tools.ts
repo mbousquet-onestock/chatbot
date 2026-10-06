@@ -54,6 +54,9 @@ const SEARCH_FILTERS = [
 
 const stringArray = { type: "array", items: { type: "string" } } as const;
 
+/** Champs des points de stock renvoyés par défaut (sans les horaires, volumineux). */
+const ENDPOINT_FIELDS = ["id", "name", "timezone", "address", "classification", "tags", "open", "modules"];
+
 /** Caractéristiques d'article demandées par défaut (les noms dépendent de la configuration du catalogue). */
 const DEFAULT_ITEM_FEATURES = ["name", "description", "image_url", "color", "size", "brand", "price"];
 
@@ -374,6 +377,88 @@ export const TOOLS: Record<string, ToolSpec> = {
         fields: ["product_id", "category_ids", "is_default"],
         pagination: { limit: Math.min(Math.max(Number(input.limit) || 10, 1), 50), start: Math.max(Number(input.start) || 0, 0) },
         get_total: true,
+      }));
+    },
+  },
+
+  get_endpoint: {
+    write: false,
+    definition: {
+      name: "get_endpoint",
+      description:
+        "Détail d'un point de stock (magasin, entrepôt…) par son id (GET /v3/endpoints/{id}) : nom, adresse, contact, " +
+        "classification, modules (ckc, ffs, ropis…), ouvert ou non, horaires des 7 prochains jours. Utile pour les " +
+        "endpoint_id d'une commande (line_item_groups, origine ou destination des colis).",
+      input_schema: {
+        type: "object",
+        properties: { endpoint_id: { type: "string" } },
+        required: ["endpoint_id"],
+      },
+    },
+    run: (siteId, input) =>
+      onestockRequest(siteId, "GET", `/v3/endpoints/${encodeId(requireString(input, "endpoint_id"))}`, {
+        fields: [...ENDPOINT_FIELDS, "opening_hours_next_seven_days"],
+      }),
+  },
+
+  search_endpoints: {
+    write: false,
+    definition: {
+      name: "search_endpoints",
+      description:
+        "Recherche de points de stock (GET /v3/endpoints) : par ids, ville, code postal, pays, type, classification, " +
+        "modules, ouverture actuelle, ou proximité (autour d'un point de stock ou de coordonnées GPS).",
+      input_schema: {
+        type: "object",
+        properties: {
+          endpoint_ids: stringArray,
+          city: { type: "string", description: "Ville (sensible à la casse)." },
+          zip_code: { type: "string" },
+          country_code: { type: "string", description: "Code pays ISO 3166-1 alpha-2." },
+          type: { type: "string", description: "Type de point de stock (classification endpoint_type), ex. store, warehouse." },
+          classification: {
+            type: "array",
+            items: { type: "object" },
+            description: "Filtre de classification OneStock, ex. [{\"endpoint_type\": [[\"store\"]], \"region\": [[\"north\"]]}].",
+          },
+          modules: { type: "object", description: "Modules requis, ex. {\"ckc\": true}." },
+          open: { type: "boolean", description: "Seulement les points de stock ouverts (true) ou fermés (false) maintenant." },
+          near_endpoint_id: { type: "string", description: "Chercher autour de ce point de stock." },
+          near_lat: { type: "number" },
+          near_lon: { type: "number" },
+          distance_m: { type: "number", description: "Distance maximale en mètres (avec near_*)." },
+          include_opening_hours: { type: "boolean", description: "Ajouter les horaires des 7 prochains jours." },
+          limit: { type: "integer", minimum: 1, maximum: 50, description: "Défaut 20." },
+          start: { type: "integer", minimum: 0 },
+        },
+      },
+    },
+    run(siteId, input) {
+      const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 50);
+      const hasCoordinates = typeof input.near_lat === "number" && typeof input.near_lon === "number";
+      const near = input.near_endpoint_id || hasCoordinates
+        ? compact({
+            endpoint_id: input.near_endpoint_id,
+            centre_coordinates: hasCoordinates ? { lat: input.near_lat, lon: input.near_lon } : undefined,
+            distance: typeof input.distance_m === "number" ? input.distance_m : undefined,
+            limit,
+          })
+        : undefined;
+      const address = compact({
+        city: input.city,
+        zip_code: input.zip_code,
+        regions: input.country_code ? { country: { code: String(input.country_code).toUpperCase() } } : undefined,
+      });
+      return onestockRequest(siteId, "GET", "/v3/endpoints", compact({
+        endpoint_ids: input.endpoint_ids?.length ? input.endpoint_ids.map(String) : undefined,
+        address: Object.keys(address).length ? address : undefined,
+        type: input.type,
+        classification: Array.isArray(input.classification) ? input.classification : undefined,
+        modules: input.modules && typeof input.modules === "object" ? input.modules : undefined,
+        open: typeof input.open === "boolean" ? input.open : undefined,
+        near,
+        fields: input.include_opening_hours ? [...ENDPOINT_FIELDS, "opening_hours_next_seven_days"] : ENDPOINT_FIELDS,
+        pagination: { limit, start: Math.max(Number(input.start) || 0, 0) },
       }));
     },
   },
