@@ -43,6 +43,7 @@ Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)     
 | `get_order_comments` | `GET /v2/orders/{id}/comments` | lecture |
 | `get_order_history` | `GET /v1/history` | lecture |
 | `get_parcel` | `GET /v2/parcels/{id}` | lecture |
+| `get_order_parcels` | `GET /v3/orders/{id}` (`parcels.*` : avancement, suivi, documents) | lecture |
 | `get_line_item_groups` | `GET /v2/line_item_groups` | lecture |
 | `get_order_items_details` | `GET /v3/orders/{id}` (`order_items.item.features.*` : nom, description, image…) | lecture |
 | `search_items` | `GET /v3/items` (catalogue : motif, product_ids, caractéristiques) | lecture |
@@ -52,6 +53,10 @@ Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)     
 
 Les GET OneStock prennent un corps JSON : ils sont envoyés en `POST` avec `X-HTTP-Method-Override: GET`, comme
 le prévoit la documentation de l'API. `site_id` et `token` sont ajoutés par le serveur.
+
+**Documents des colis** : `get_order_parcels` ajoute à chaque colis des liens `document_links` vers
+`/api/documents/{id}?site_id=…`. Cette route lit `GET /v3/documents/{id}` et renvoie le fichier, ou à défaut
+l'aperçu en image contenu dans la réponse, pour l'ouvrir dans un onglet.
 
 **Aucune écriture sans confirmation** : quand le modèle demande une action d'écriture, le serveur s'arrête et
 l'interface affiche une carte « Action à confirmer » avec les paramètres exacts. L'appel à OneStock n'est fait
