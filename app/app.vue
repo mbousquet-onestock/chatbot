@@ -88,7 +88,7 @@ onMounted(() => resize(Math.max(640, Math.round(window.screen.availHeight * 0.75
       </div>
 
       <div v-else-if="os.status === 'error'" class="center narrow">
-        <OsAlert type="danger" :title="t.errorTitle" :subtitle="(t as any)[os.error] ?? os.error" />
+        <OsAlert type="danger" :title="t.errorTitle" :subtitle="t.errors[os.error] ?? (t as any)[os.error] ?? os.error" />
       </div>
 
       <template v-else>

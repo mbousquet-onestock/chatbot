@@ -41,3 +41,15 @@ test("formats dates for search_orders", () => {
   assert.equal(toOnestockDate("20190105135416"), 20190105135416);
   assert.throws(() => toOnestockDate("demain"));
 });
+
+test("reports why a signature is rejected and accepts millisecond timestamps", async () => {
+  const { checkExtensionSignature } = await import("../server/utils/signature.ts");
+  const good = `t=${now},h0=${sign("k", now, "ext1", "u7")}`;
+  assert.equal(checkExtensionSignature(input(good), [], now), "no_keys");
+  assert.equal(checkExtensionSignature(input(undefined), ["k"], now), "missing_signature");
+  assert.equal(checkExtensionSignature(input("h0=abc"), ["k"], now), "malformed");
+  assert.equal(checkExtensionSignature(input(good), ["k"], now + 7 * 3600), "expired");
+  assert.equal(checkExtensionSignature(input(good), ["other"], now), "mismatch");
+  const ms = now * 1000;
+  assert.equal(checkExtensionSignature(input(`t=${ms},h0=${sign("k", ms, "ext1", "u7")}`), ["k"], now), "ok");
+});

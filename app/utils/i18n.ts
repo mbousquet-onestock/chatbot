@@ -1,5 +1,15 @@
 /** Libellés de l'interface, selon le paramètre `lang` transmis par OneStock (fr, en ; anglais par défaut). */
 const fr = {
+  errors: {
+    signature_no_keys: "EXTENSION_SECRET_KEYS n'est pas défini sur le serveur (Vercel) : renseignez le secret fourni par OneStock puis redéployez.",
+    signature_mismatch: "La signature OneStock ne correspond à aucune clé de EXTENSION_SECRET_KEYS. Vérifiez le secret : il est propre à chaque instance OneStock (qualif, training, production).",
+    signature_expired: "La signature OneStock a plus de 6 heures, ou l'horloge du serveur est décalée. Rechargez la page du back-office.",
+    signature_missing_signature: "OneStock n'a pas transmis de signature (extension_signature) dans le handshake.",
+    signature_malformed: "La signature OneStock n'a pas le format attendu (t=…,h0=…).",
+    dev_session_disabled: "Extension ouverte hors du back-office OneStock : la session de développement est désactivée (ALLOW_DEV_SESSION).",
+    site_not_allowed: "Ce site n'est pas dans ALLOWED_SITE_IDS.",
+    unknown_extension: "Cet extension_id ne correspond pas à EXTENSION_ID.",
+  } as Record<string, string>,
   tabChat: "Assistant",
   tabSettings: "Paramètres",
   settings: {
@@ -110,6 +120,16 @@ const fr = {
 type Dict = typeof fr;
 
 const en: Dict = {
+  errors: {
+    signature_no_keys: "EXTENSION_SECRET_KEYS is not set on the server (Vercel): add the secret provided by OneStock and redeploy.",
+    signature_mismatch: "The OneStock signature does not match any key in EXTENSION_SECRET_KEYS. Check the secret: it differs for each OneStock instance (qualif, training, production).",
+    signature_expired: "The OneStock signature is older than 6 hours, or the server clock is off. Reload the back-office page.",
+    signature_missing_signature: "OneStock did not send a signature (extension_signature) in the handshake.",
+    signature_malformed: "The OneStock signature does not have the expected format (t=…,h0=…).",
+    dev_session_disabled: "Extension opened outside the OneStock back office: the development session is disabled (ALLOW_DEV_SESSION).",
+    site_not_allowed: "This site is not in ALLOWED_SITE_IDS.",
+    unknown_extension: "This extension_id does not match EXTENSION_ID.",
+  },
   tabChat: "Assistant",
   tabSettings: "Settings",
   settings: {

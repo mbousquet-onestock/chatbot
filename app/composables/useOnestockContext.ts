@@ -17,6 +17,8 @@ export interface OnestockContext {
   /** Anchor bo.orders.action */
   order_ids?: string[];
   extension_signature?: string;
+  /** user_id reçu dans onestock_data (peut différer de celui de l'URL). */
+  handshake_user_id?: string;
 }
 
 type Status = "loading" | "ready" | "error";
@@ -86,6 +88,7 @@ async function openSession(): Promise<void> {
           extension_signature: c.extension_signature,
           extension_id: c.extension_id,
           user_id: c.user_id,
+          handshake_user_id: c.handshake_user_id,
           site_id: c.site_id,
         },
   });
@@ -120,6 +123,7 @@ async function start() {
         order_id: data.order_id ?? fromUrl.order_id,
         order_ids: orderIds ?? fromUrl.order_ids,
         extension_signature: data.extension_signature,
+        handshake_user_id: data.user_id != null ? String(data.user_id) : undefined,
       };
     } else if (!fromUrl.site_id) {
       throw new Error("not_embedded");

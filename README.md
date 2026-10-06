@@ -149,6 +149,18 @@ Pour utiliser le paquet officiel une fois l'accès obtenu : l'installer (voir so
 `@onestock-public/design-system/dist/onestock-design-system.css` dans `nuxt.config.ts` et remplacer les
 composants de `app/components/os/` par `import { OsButton, OsBadge, OsAlert, OsIcon } from '@onestock-public/design-system'`.
 
+## Dépannage
+
+| Message affiché | Cause et correction |
+|---|---|
+| `EXTENSION_SECRET_KEYS n'est pas défini…` | Variable absente sur Vercel : ajouter le secret fourni par OneStock et redéployer. |
+| `La signature OneStock ne correspond à aucune clé…` | Mauvais secret, ou secret d'une autre instance (qualif / training / production ont chacune le leur). |
+| `La signature OneStock a plus de 6 heures…` | Recharger la page du back-office. |
+| `Extension ouverte hors du back-office…` | Page ouverte directement : pour un test local, `ALLOW_DEV_SESSION=true`. |
+
+Le détail de chaque refus (raison, site, extension_id, nombre de clés, âge de la signature, jamais les secrets)
+est écrit dans les logs de la fonction Vercel (`[session] signature check failed`).
+
 ## Sécurité
 
 - Le token OneStock reste côté serveur ; le front ne détient qu'un JWT d'une heure (renouvelé automatiquement
