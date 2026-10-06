@@ -71,6 +71,10 @@ const statusIcon = { running: "loader", done: "check", error: "error-outline", d
 .markdown :deep(ul), .markdown :deep(ol) { padding-left: var(--os-spacing-2xl); }
 .markdown :deep(h1), .markdown :deep(h2), .markdown :deep(h3) { font-size: 1rem; font-weight: 500; margin: var(--os-spacing-l) 0 var(--os-spacing-s); }
 .markdown :deep(a) { color: var(--os-text-brand); }
+.markdown :deep(img) {
+  display: block; max-width: min(240px, 100%); max-height: 240px; object-fit: contain;
+  margin: var(--os-spacing-s) 0; border: 1px solid var(--os-border-primary); border-radius: var(--os-radius-m); background: #fff;
+}
 .markdown :deep(code) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8125rem;
   padding: 1px var(--os-spacing-s); border-radius: var(--os-radius-s); background: var(--os-surface-neutral);

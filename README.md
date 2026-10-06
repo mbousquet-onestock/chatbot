@@ -44,6 +44,8 @@ Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)     
 | `get_order_history` | `GET /v1/history` | lecture |
 | `get_parcel` | `GET /v2/parcels/{id}` | lecture |
 | `get_line_item_groups` | `GET /v2/line_item_groups` | lecture |
+| `get_order_items_details` | `GET /v3/orders/{id}` (`order_items.item.features.*` : nom, description, image…) | lecture |
+| `search_items` | `GET /v3/items` (catalogue : motif, product_ids, caractéristiques) | lecture |
 | `update_order_state` | `PATCH /v3/orders/{id}` (`order.from` → `order.to`) | **écriture** |
 | `update_order` | `PATCH /v3/orders/{id}` (client, adresse, informations) | **écriture** |
 | `update_line_item_groups_state` | `PATCH /v2/line_item_groups` | **écriture** |

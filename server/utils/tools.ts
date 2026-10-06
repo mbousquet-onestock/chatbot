@@ -53,6 +53,14 @@ const SEARCH_FILTERS = [
 ];
 
 const stringArray = { type: "array", items: { type: "string" } } as const;
+
+/** Caractéristiques d'article demandées par défaut (les noms dépendent de la configuration du catalogue). */
+const DEFAULT_ITEM_FEATURES = ["name", "description", "image_url", "color", "size", "brand", "price"];
+
+const featureNames = (input: Input): string[] =>
+  (Array.isArray(input.features) && input.features.length ? input.features : DEFAULT_ITEM_FEATURES)
+    .map(String)
+    .filter((f: string) => /^[\w.-]+$/.test(f));
 const indexRanges = {
   type: "array",
   description: "Plages d'index de line item groups, ex. [{\"from\":0,\"to\":1}] (bornes incluses).",
@@ -223,6 +231,96 @@ export const TOOLS: Record<string, ToolSpec> = {
       input_schema: { type: "object", properties: { parcel_id: { type: "string" } }, required: ["parcel_id"] },
     },
     run: (siteId, input) => onestockRequest(siteId, "GET", `/v2/parcels/${encodeId(requireString(input, "parcel_id"))}`),
+  },
+
+  get_order_items_details: {
+    write: false,
+    definition: {
+      name: "get_order_items_details",
+      description:
+        "Données catalogue des articles d'une commande (GET /v3/orders/{id}, champs order_items.item.features.*) : " +
+        "nom, description, URL de l'image, couleur, taille… pour chaque article commandé. Utiliser quand " +
+        "l'utilisateur veut décrire ou voir un article. Les noms de caractéristiques dépendent du catalogue du site : " +
+        "si une valeur manque, chercher l'article avec search_items sans `features` pour découvrir les noms disponibles.",
+      input_schema: {
+        type: "object",
+        properties: {
+          order_id: { type: "string" },
+          lang: { type: "string", description: "Langue des caractéristiques (ex. fr, en). Défaut : langue de l'utilisateur." },
+          features: { ...stringArray, description: `Caractéristiques à lire. Défaut : ${DEFAULT_ITEM_FEATURES.join(", ")}.` },
+        },
+        required: ["order_id", "lang"],
+      },
+    },
+    run: (siteId, input) =>
+      onestockRequest(siteId, "GET", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, {
+        fields: [
+          "id",
+          "order_items._id",
+          "order_items.item_id",
+          "order_items.quantity",
+          ...featureNames(input).map((f) => `order_items.item.features.${f}`),
+        ],
+        item_features_lang: requireString(input, "lang"),
+      }),
+  },
+
+  search_items: {
+    write: false,
+    definition: {
+      name: "search_items",
+      description:
+        "Recherche dans le catalogue d'articles OneStock (GET /v3/items) : par texte partiel (`pattern`, sur les " +
+        "caractéristiques indexées comme le nom), par product_ids ou par filtres de caractéristiques. Renvoie les " +
+        "articles (id, product_id, catégories) et leurs caractéristiques : description, URL de l'image, prix, " +
+        "couleur… Sans `lang` ni `features`, toutes les caractéristiques dans toutes les langues sont renvoyées " +
+        "(utile pour découvrir les noms disponibles).",
+      input_schema: {
+        type: "object",
+        properties: {
+          pattern: { type: "string", description: "Texte recherché (partiel, insensible à la casse)." },
+          searchable_fields: {
+            ...stringArray,
+            description: "Caractéristiques où chercher `pattern`, par priorité. Défaut : name.",
+          },
+          product_ids: stringArray,
+          feature_filters: {
+            type: "object",
+            description: "Filtres exacts par caractéristique, ex. {\"color\": [\"red\", \"blue\"]} (OU entre valeurs, ET entre caractéristiques).",
+          },
+          lang: { type: "string", description: "Langue des caractéristiques (ex. fr, en)." },
+          features: { ...stringArray, description: "Caractéristiques à renvoyer (avec `lang`). Défaut : toutes." },
+          limit: { type: "integer", minimum: 1, maximum: 50, description: "Défaut 10." },
+          start: { type: "integer", minimum: 0, description: "Index de départ (pagination)." },
+        },
+      },
+    },
+    run(siteId, input) {
+      const pattern = typeof input.pattern === "string" ? input.pattern.trim() : "";
+      const searchable: string[] = input.searchable_fields?.length ? input.searchable_fields.map(String) : ["name"];
+      const lang = typeof input.lang === "string" && input.lang.trim() ? input.lang.trim() : undefined;
+      const filters = input.feature_filters && typeof input.feature_filters === "object"
+        ? Object.entries(input.feature_filters as Record<string, unknown>).map(([name, values]) => [
+            name,
+            (Array.isArray(values) ? values : [values]).map((v) => [String(v)]),
+          ])
+        : [];
+      const itemFilters = compact({
+        product_ids: input.product_ids?.length ? input.product_ids.map(String) : undefined,
+        features: filters.length ? [Object.fromEntries(filters)] : undefined,
+        lang: filters.length ? lang : undefined,
+      });
+      return onestockRequest(siteId, "GET", "/v3/items", compact({
+        pattern: pattern || undefined,
+        searchable_fields: pattern ? searchable.map((name, i) => ({ name, priority: i + 1 })) : undefined,
+        filters: Object.keys(itemFilters).length ? itemFilters : undefined,
+        lang,
+        features: lang && Array.isArray(input.features) && input.features.length ? featureNames(input) : undefined,
+        fields: ["product_id", "category_ids", "is_default"],
+        pagination: { limit: Math.min(Math.max(Number(input.limit) || 10, 1), 50), start: Math.max(Number(input.start) || 0, 0) },
+        get_total: true,
+      }));
+    },
   },
 
   get_line_item_groups: {

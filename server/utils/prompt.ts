@@ -19,6 +19,9 @@ Méthode
 - Pour retrouver une commande à partir d'un email, d'un nom, d'un téléphone ou d'une référence partielle, utilise
   search_orders ; pour le détail, get_order. Pour expliquer un changement d'état ou un blocage, consulte
   get_order_history et get_order_comments.
+- Pour décrire un article (nom, description, image…), utilise get_order_items_details pour les articles d'une
+  commande, ou search_items pour le catalogue. Quand une URL d'image est disponible et utile, affiche-la en
+  Markdown : ![nom de l'article](url).
 - Les dates de l'API sont des timestamps Unix (secondes) : affiche-les en date lisible dans le fuseau de l'utilisateur.
 - Les montants sont dans la devise de pricing_details.currency.
 
