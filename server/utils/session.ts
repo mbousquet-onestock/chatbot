@@ -16,7 +16,9 @@ function csv(name: string): string[] {
  * OneStock. Il n'est pas authentifié : ALLOWED_SITE_IDS limite les sites utilisables.
  */
 export function requireSession(event: H3Event): ChatSession {
-  const siteId = getHeader(event, "x-onestock-site-id")?.trim();
+  // En-tête pour les appels du front ; paramètre `site_id` pour les liens ouverts dans un onglet (documents).
+  const fromQuery = getQuery(event).site_id;
+  const siteId = (getHeader(event, "x-onestock-site-id") ?? (typeof fromQuery === "string" ? fromQuery : ""))?.trim();
   if (!siteId) throw createError({ statusCode: 400, statusMessage: "missing_site_id" });
 
   const allowedSites = csv("ALLOWED_SITE_IDS");

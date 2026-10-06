@@ -71,6 +71,28 @@ const indexRanges = {
   },
 } as const;
 
+/** Lien vers la route /api/documents qui affiche un document OneStock. */
+export function documentLink(documentId: string, siteId: string): string {
+  return `/api/documents/${encodeURIComponent(documentId)}?site_id=${encodeURIComponent(siteId)}`;
+}
+
+/** Ajoute `document_links` ({type: lien}) à chaque colis qui a des `documents` ({type: id}). */
+function withDocumentLinks(data: unknown, siteId: string): unknown {
+  const order = (data as { order?: unknown })?.order ?? data;
+  const parcels = (order as { parcels?: unknown })?.parcels;
+  if (!Array.isArray(parcels)) return data;
+  for (const parcel of parcels) {
+    const documents = parcel?.documents;
+    if (!documents || typeof documents !== "object") continue;
+    parcel.document_links = Object.fromEntries(
+      Object.entries(documents as Record<string, unknown>)
+        .filter(([, id]) => typeof id === "string" && id)
+        .map(([type, id]) => [type, documentLink(id as string, siteId)]),
+    );
+  }
+  return data;
+}
+
 function requireString(input: Input, key: string): string {
   const v = input[key];
   if (typeof v !== "string" || !v.trim()) throw new Error(`"${key}" is required`);
@@ -227,10 +249,43 @@ export const TOOLS: Record<string, ToolSpec> = {
     write: false,
     definition: {
       name: "get_parcel",
-      description: "Détail d'un colis (GET /v2/parcels/{id}) : état, transporteur, suivi, documents.",
+      description:
+        "Détail d'un colis par son id (GET /v2/parcels/{id}) : état, commande, articles (index), adresse, origine, " +
+        "transporteur et suivi. Pour les documents (étiquette…) et la date, utiliser get_order_parcels.",
       input_schema: { type: "object", properties: { parcel_id: { type: "string" } }, required: ["parcel_id"] },
     },
-    run: (siteId, input) => onestockRequest(siteId, "GET", `/v2/parcels/${encodeId(requireString(input, "parcel_id"))}`),
+    run: (siteId, input) =>
+      onestockRequest(siteId, "GET", `/v2/parcels/${encodeId(requireString(input, "parcel_id"))}`, {
+        fields: [
+          "id", "order_id", "state", "line_item_index_ranges", "information", "delivery.destination.address",
+          "delivery.destination.endpoint_id", "delivery.origin", "delivery.carrier", "shipment.tracking_code",
+          "shipment.tracking_link",
+        ],
+      }),
+  },
+
+  get_order_parcels: {
+    write: false,
+    definition: {
+      name: "get_order_parcels",
+      description:
+        "Colis d'une commande et leur avancement (GET /v3/orders/{id}, champs parcels.*) : état, dates de création " +
+        "et de mise à jour, articles (index), origine, destination, transporteur, numéro et lien de suivi, et " +
+        "documents liés (étiquette d'expédition, bon de retour…). Chaque document est fourni avec un lien " +
+        "`document_links` à afficher tel quel en Markdown pour l'ouvrir.",
+      input_schema: { type: "object", properties: { order_id: { type: "string" } }, required: ["order_id"] },
+    },
+    async run(siteId, input) {
+      const res = await onestockRequest(siteId, "GET", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, {
+        fields: [
+          "id", "state", "parcels.id", "parcels.state", "parcels.line_item_index_ranges", "parcels.information",
+          "parcels.delivery.destination.address", "parcels.delivery.destination.endpoint_id", "parcels.delivery.origin",
+          "parcels.delivery.carrier", "parcels.delivery.type", "parcels.shipment.tracking_code",
+          "parcels.shipment.tracking_link", "parcels.date", "parcels.last_update", "parcels.documents",
+        ],
+      });
+      return res.ok ? { ...res, data: withDocumentLinks(res.data, siteId) } : res;
+    },
   },
 
   get_order_items_details: {

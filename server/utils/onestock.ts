@@ -15,25 +15,35 @@ const TIMEOUT_MS = 25_000;
  * Les GET OneStock prennent un corps JSON : ils partent en POST avec `X-HTTP-Method-Override: GET`
  * (fetch ne permet pas de corps sur un GET), comme le prévoit la documentation de l'API.
  */
+export async function onestockFetch(
+  siteId: string,
+  method: HttpMethod,
+  path: string,
+  body: Record<string, unknown> = {},
+  accept = "application/json",
+): Promise<Response> {
+  const { token, apiRoot } = await getOnestockSettings(siteId);
+  const isGet = method === "GET";
+  return fetch(`${apiRoot}${path}`, {
+    method: isGet ? "POST" : method,
+    headers: {
+      "Content-Type": "application/json",
+      Accept: accept,
+      ...(isGet ? { "X-HTTP-Method-Override": "GET" } : {}),
+    },
+    body: JSON.stringify({ ...body, site_id: siteId, token }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+}
+
+/** Comme onestockFetch, avec le corps de réponse décodé (JSON si possible). */
 export async function onestockRequest(
   siteId: string,
   method: HttpMethod,
   path: string,
   body: Record<string, unknown> = {},
 ): Promise<OnestockResult> {
-  const { token, apiRoot } = await getOnestockSettings(siteId);
-  const isGet = method === "GET";
-  const res = await fetch(`${apiRoot}${path}`, {
-    method: isGet ? "POST" : method,
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      ...(isGet ? { "X-HTTP-Method-Override": "GET" } : {}),
-    },
-    body: JSON.stringify({ ...body, site_id: siteId, token }),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-
+  const res = await onestockFetch(siteId, method, path, body);
   const text = await res.text();
   let data: unknown = text;
   try {
