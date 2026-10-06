@@ -55,9 +55,7 @@ function noteText(e: ConfigEntry): string {
   const n = e.note;
   if (!n) return "";
   if (n === "default") return t.value.defaultValue;
-  if (n === "derived") return t.value.derived;
   if (n === "all") return t.value.allEnvironments;
-  if (e.name === "EXTENSION_SECRET_KEYS") return `${n} ${t.value.keys}`;
   if (e.name === "ALLOWED_SITE_IDS") {
     const [count, current] = n.split("|");
     return `${count} ${t.value.sites} · ${current === "current" ? t.value.currentIncluded : t.value.currentExcluded}`;
@@ -73,7 +71,6 @@ function noteText(e: ConfigEntry): string {
 
 const warn = (e: ConfigEntry) =>
   (e.name === "ALLOWED_SITE_IDS" && (!e.set || e.note?.endsWith("not-current"))) ||
-  (e.name === "ALLOW_DEV_SESSION" && e.value === "true") ||
   (e.name === "onestock_token" && e.note?.startsWith("plain"));
 
 const checkDetail = (c: Check) => t.value.errors[c.detail] ?? (c.detail === "env-fallback" ? t.value.envFallback : c.detail);

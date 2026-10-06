@@ -1,46 +1,32 @@
-import { createHash } from "node:crypto";
 import type { H3Event } from "h3";
-import { SignJWT, jwtVerify } from "jose";
 
-/** Session issue de la vérification de signature : identité OneStock de l'utilisateur et site. */
+/** Contexte OneStock de la requête : site, utilisateur et extension transmis par le front. */
 export interface ChatSession {
   userId: string;
   extensionId: string;
   siteId: string;
 }
 
-const SESSION_TTL = "1h";
-
-function jwtKey(): Uint8Array {
-  const secret = process.env.JWT_SECRET?.trim();
-  if (secret) return new TextEncoder().encode(secret);
-  // À défaut, dérivé du secret de l'extension (connu du seul serveur) pour ne pas multiplier les variables.
-  const fallback = process.env.EXTENSION_SECRET_KEYS?.split(",")[0]?.trim();
-  if (!fallback) throw new Error("JWT_SECRET (or EXTENSION_SECRET_KEYS) is not set");
-  return createHash("sha256").update(`chatbot-jwt:${fallback}`).digest();
+function csv(name: string): string[] {
+  return (process.env[name] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-export async function issueSession(session: ChatSession): Promise<string> {
-  return new SignJWT({ ext: session.extensionId, site: session.siteId })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject(session.userId)
-    .setIssuedAt()
-    .setExpirationTime(SESSION_TTL)
-    .sign(jwtKey());
-}
+/**
+ * Lit le contexte envoyé par le front (en-têtes X-Onestock-*), issu des paramètres d'URL et du handshake
+ * OneStock. Il n'est pas authentifié : ALLOWED_SITE_IDS limite les sites utilisables.
+ */
+export function requireSession(event: H3Event): ChatSession {
+  const siteId = getHeader(event, "x-onestock-site-id")?.trim();
+  if (!siteId) throw createError({ statusCode: 400, statusMessage: "missing_site_id" });
 
-/** Lit et vérifie le JWT `Authorization: Bearer …`, ou répond 401. */
-export async function requireSession(event: H3Event): Promise<ChatSession> {
-  const auth = getHeader(event, "authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) throw createError({ statusCode: 401, statusMessage: "Missing session token" });
-  try {
-    const { payload } = await jwtVerify(token, jwtKey(), { algorithms: ["HS256"] });
-    if (typeof payload.sub !== "string" || typeof payload.site !== "string" || typeof payload.ext !== "string") {
-      throw new Error("malformed");
-    }
-    return { userId: payload.sub, siteId: payload.site, extensionId: payload.ext };
-  } catch {
-    throw createError({ statusCode: 401, statusMessage: "Invalid or expired session" });
+  const allowedSites = csv("ALLOWED_SITE_IDS");
+  if (allowedSites.length && !allowedSites.includes(siteId)) {
+    throw createError({ statusCode: 403, statusMessage: "site_not_allowed" });
   }
+  const extensionId = getHeader(event, "x-onestock-extension-id")?.trim() ?? "";
+  const expectedExtension = process.env.EXTENSION_ID?.trim();
+  if (expectedExtension && extensionId !== expectedExtension) {
+    throw createError({ statusCode: 403, statusMessage: "unknown_extension" });
+  }
+  return { siteId, extensionId, userId: getHeader(event, "x-onestock-user-id")?.trim() ?? "" };
 }

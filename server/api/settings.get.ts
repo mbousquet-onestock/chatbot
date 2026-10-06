@@ -2,7 +2,6 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireSession } from "../utils/session";
 import { readSettingsRows } from "../utils/settings";
 import { onestockRequest } from "../utils/onestock";
-import { extensionSecretKeys } from "../utils/signature";
 
 /** Une ligne de l'onglet Paramètres. Les secrets ne sont jamais renvoyés : seulement leur présence. */
 interface ConfigEntry {
@@ -50,16 +49,14 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ ms: number; result?: T;
 
 /** État de la configuration (variables d'environnement et table settings) et tests de connexion, en lecture seule. */
 export default defineEventHandler(async (event) => {
-  const session = await requireSession(event);
+  const session = requireSession(event);
   const model = env("ANTHROPIC_MODEL") ?? "claude-opus-5-5";
   const allowedSites = csv("ALLOWED_SITE_IDS");
-  const secretKeys = extensionSecretKeys();
 
   const environment: ConfigEntry[] = [
     envEntry("DATABASE_URL", { required: true, secret: true }),
     envEntry("SETTINGS_ENCRYPTION_KEY", { required: true, secret: true }),
     envEntry("ONESTOCK_ENVIRONMENT", { note: env("ONESTOCK_ENVIRONMENT") ? undefined : "all" }),
-    { ...envEntry("EXTENSION_SECRET_KEYS", { required: true, secret: true }), note: secretKeys.length ? `${secretKeys.length}` : undefined },
     envEntry("EXTENSION_ID"),
     {
       ...envEntry("ALLOWED_SITE_IDS"),
@@ -67,11 +64,9 @@ export default defineEventHandler(async (event) => {
       // Liste des autres sites non exposée : seulement leur nombre et la présence du site courant.
       note: allowedSites.length ? `${allowedSites.length}|${allowedSites.includes(session.siteId) ? "current" : "not-current"}` : undefined,
     },
-    { ...envEntry("JWT_SECRET", { secret: true }), note: env("JWT_SECRET") ? undefined : "derived" },
     envEntry("ANTHROPIC_API_KEY", { required: true, secret: true }),
     envEntry("ANTHROPIC_MODEL", { defaultValue: "claude-opus-5-5" }),
     envEntry("FRAME_ANCESTORS", { defaultValue: "'self' https://*.onestock-retail.com https://*.onestock-retail.dev" }),
-    envEntry("ALLOW_DEV_SESSION"),
   ];
   if (!env("DATABASE_URL")) {
     environment.push(envEntry("ONESTOCK_API_ROOT"), envEntry("ONESTOCK_TOKEN", { secret: true }));

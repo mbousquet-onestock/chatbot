@@ -31,7 +31,7 @@ const MAX_BODY_CHARS = 4_000_000;
 let anthropic: Anthropic | undefined;
 
 export default defineEventHandler(async (event) => {
-  const session = await requireSession(event);
+  const session = requireSession(event);
   const raw = await readRawBody(event, "utf8");
   if (!raw || raw.length > MAX_BODY_CHARS) throw createError({ statusCode: 413, statusMessage: "Conversation too large" });
   const body = JSON.parse(raw) as ChatBody;

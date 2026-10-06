@@ -1,6 +1,6 @@
 /**
- * Contrat UI Extensibility OneStock : paramètres d'URL, handshake postMessage (extension_ready → onestock_data),
- * puis vérification de la signature côté serveur qui renvoie un JWT gardé en mémoire.
+ * Contexte OneStock : paramètres d'URL, complétés par le handshake postMessage (extension_ready → onestock_data)
+ * quand l'extension est affichée dans le back-office. Le site et l'utilisateur sont transmis au serveur tels quels.
  */
 export interface OnestockContext {
   extension_id?: string;
@@ -16,9 +16,6 @@ export interface OnestockContext {
   order_id?: string;
   /** Anchor bo.orders.action */
   order_ids?: string[];
-  extension_signature?: string;
-  /** user_id reçu dans onestock_data (peut différer de celui de l'URL). */
-  handshake_user_id?: string;
 }
 
 type Status = "loading" | "ready" | "error";
@@ -28,7 +25,6 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 const state = reactive({
   status: "loading" as Status,
   error: "" as string,
-  token: "" as string,
   context: {} as OnestockContext,
   embedded: false,
 });
@@ -77,24 +73,6 @@ function waitForOnestockData(): Promise<Record<string, any>> {
   });
 }
 
-async function openSession(): Promise<void> {
-  const c = state.context;
-  const dev = !state.embedded;
-  const res = await $fetch<{ token: string }>("/api/session", {
-    method: "POST",
-    body: dev
-      ? { dev: true, site_id: c.site_id, user_id: c.user_id ?? "dev", extension_id: c.extension_id ?? "dev" }
-      : {
-          extension_signature: c.extension_signature,
-          extension_id: c.extension_id,
-          user_id: c.user_id,
-          handshake_user_id: c.handshake_user_id,
-          site_id: c.site_id,
-        },
-  });
-  state.token = res.token;
-}
-
 async function start() {
   state.embedded = window.parent !== window;
   const fromUrl = readUrlParams();
@@ -107,48 +85,44 @@ async function start() {
   }
   state.context = fromUrl;
 
-  try {
-    if (state.embedded) {
-      const data = await waitForOnestockData();
+  if (state.embedded) {
+    // Sans réponse du back-office, on continue avec les paramètres d'URL.
+    const data = await waitForOnestockData().catch(() => undefined);
+    if (data) {
       const orderIds = typeof data.order_ids === "string"
         ? data.order_ids.split(",").map((s: string) => s.trim()).filter(Boolean)
         : Array.isArray(data.order_ids) ? data.order_ids.map(String) : undefined;
       state.context = {
         ...fromUrl,
-        // L'identité vérifiée par la signature est celle des paramètres d'URL ; le payload complète le reste.
         site_id: fromUrl.site_id ?? data.site_id,
-        user_id: fromUrl.user_id ?? data.user_id,
+        user_id: fromUrl.user_id ?? (data.user_id != null ? String(data.user_id) : undefined),
         host_app: data.host_app ?? fromUrl.host_app,
         injection_point_path: data.injection_point_path ?? fromUrl.injection_point_path,
         order_id: data.order_id ?? fromUrl.order_id,
         order_ids: orderIds ?? fromUrl.order_ids,
-        extension_signature: data.extension_signature,
-        handshake_user_id: data.user_id != null ? String(data.user_id) : undefined,
       };
-    } else if (!fromUrl.site_id) {
-      throw new Error("not_embedded");
     }
-    await openSession();
+  }
+  if (state.context.site_id) {
     state.status = "ready";
-  } catch (err: any) {
+  } else {
     state.status = "error";
-    state.error = err?.message === "handshake_timeout" || err?.message === "not_embedded"
-      ? err.message
-      : err?.data?.statusMessage ?? err?.statusMessage ?? err?.message ?? String(err);
+    state.error = "missing_site_id";
   }
 }
 
-/** Appel authentifié à l'API de l'extension, avec renouvellement de session sur 401. */
-async function apiFetch(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
-  const res = await fetch(path, {
+/** Appel à l'API de l'extension avec le contexte OneStock en en-têtes. */
+function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const c = state.context;
+  return fetch(path, {
     ...init,
-    headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${state.token}` },
+    headers: {
+      ...(init.headers as Record<string, string>),
+      "X-Onestock-Site-Id": c.site_id ?? "",
+      "X-Onestock-User-Id": c.user_id ?? "",
+      "X-Onestock-Extension-Id": c.extension_id ?? "",
+    },
   });
-  if (res.status === 401 && !retried) {
-    await openSession();
-    return apiFetch(path, init, true);
-  }
-  return res;
 }
 
 export function useOnestockContext() {
@@ -158,8 +132,6 @@ export function useOnestockContext() {
   }
   return {
     state: readonly(state),
-    /** Nouveau JWT (expiré au bout d'une heure) à partir de la même signature, valable 6 h. */
-    refreshSession: openSession,
     apiFetch,
     /** Ajuste la hauteur de l'iframe (back-office uniquement). */
     resize: (height: number) => postToParent({ type: "extension_resize", height: Math.ceil(height) }),
