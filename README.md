@@ -15,19 +15,18 @@ API OneStock du site de l'utilisateur.
 Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)              API OneStock
         │ ── URL ?extension_id,user_id,site_id… ──▶ │
         │ ◀────────── extension_ready ───────────── │
-        │ ── onestock_data (signature, order_id) ─▶ │
-                                                     │ ── POST /api/session ──▶ vérifie la signature
-                                                     │ ◀──── JWT (1 h) ──────── │
+        │ ── onestock_data (order_id…) ───────────▶ │
                                                      │ ── POST /api/chat ─────▶ GPT-4o + outils ──▶ (token lu en base)
                                                      │ ◀── NDJSON (texte, outils, confirmation) ──
 ```
 
 1. **Contexte** : l'iframe reçoit `extension_id`, `user_id`, `site_id`, `lang`, `timezone`, `parent_url`… en
-   paramètres d'URL, envoie `extension_ready` au back-office et reçoit `onestock_data` (signature, et selon
-   l'anchor `order_id` ou `order_ids`). Les messages ne sont acceptés que depuis l'origine de `parent_url`.
-2. **Session** : `/api/session` vérifie la signature `t=…,h0=…,h1=…,h2=…` (HMAC-SHA256 de
-   `${t}.${extension_id}##${user_id}`, 6 h max) avec `EXTENSION_SECRET_KEYS`, puis émet un JWT d'une heure
-   contenant l'utilisateur et le **site**. Toutes les requêtes suivantes utilisent ce site.
+   paramètres d'URL, envoie `extension_ready` au back-office et reçoit `onestock_data` (selon l'anchor
+   `order_id` ou `order_ids`). Les messages ne sont acceptés que depuis l'origine de `parent_url`. Sans réponse
+   du back-office (ou hors back-office), seuls les paramètres d'URL sont utilisés ; `site_id` est obligatoire.
+2. **Contexte transmis au serveur** : le front envoie `site_id`, `user_id` et `extension_id` dans les en-têtes
+   `X-Onestock-Site-Id`, `X-Onestock-User-Id` et `X-Onestock-Extension-Id`. La signature de l'extension n'est
+   **pas vérifiée** : seuls `ALLOWED_SITE_IDS` et `EXTENSION_ID` filtrent ces valeurs.
 3. **Configuration** : pour ce site, le serveur lit `onestock_token` et `onestock_api_root` dans `settings`
    (valeur propre au site prioritaire sur `*`), déchiffre le token (`server/lib/settings-secrets.mjs`, copie du
    module de l'application Extensions) et le garde 5 min en cache mémoire. Le token ne quitte jamais le serveur.
@@ -83,13 +82,11 @@ Variables d'environnement (voir `.env.example`) :
 
 | Variable | Rôle |
 |---|---|
-| `DATABASE_URL` | Base Neon/Vercel contenant la table `settings` |
+| `DATABASE_URL` | Base Neon/Vercel contenant la table `settings` (`POSTGRES_URL` accepté aussi) |
 | `SETTINGS_ENCRYPTION_KEY` | Clé de déchiffrement des settings (identique à l'application Extensions) |
 | `ONESTOCK_ENVIRONMENT` | *Optionnel.* Filtre `settings.environment` (sinon toutes les valeurs) |
-| `EXTENSION_SECRET_KEYS` | Secret(s) de l'extension fournis par OneStock, le plus récent d'abord |
 | `EXTENSION_ID` | *Optionnel.* Restreint à cet `extension_id` |
-| `ALLOWED_SITE_IDS` | *Recommandé.* Liste des `site_id` autorisés |
-| `JWT_SECRET` | *Optionnel.* Clé des sessions (dérivée de `EXTENSION_SECRET_KEYS` sinon) |
+| `ALLOWED_SITE_IDS` | *Fortement recommandé.* Liste des `site_id` autorisés |
 | `OPENAI_API_KEY` | Clé API OpenAI |
 | `OPENAI_MODEL` | *Optionnel.* Défaut `gpt-4o` |
 | `FRAME_ANCESTORS` | *Optionnel.* Origines autorisées à intégrer l'iframe (défaut : domaines OneStock) |
@@ -99,14 +96,13 @@ Variables d'environnement (voir `.env.example`) :
 L'interface a deux onglets : **Assistant** et **Paramètres**. L'onglet Paramètres (`GET /api/settings`,
 lecture seule, accessible à tout utilisateur de l'extension) affiche :
 
-- la session : site, utilisateur et extension issus de la signature ;
+- le contexte : site, utilisateur et extension reçus de OneStock ;
 - les connexions testées : base de données, API OneStock (recherche d'une commande) et API OpenAI (lecture du
   modèle, sans consommer de tokens) ;
 - les lignes `onestock_token` / `onestock_api_root` retenues dans `settings` pour le site (portée, chiffrement) ;
 - chaque variable d'environnement : définie, manquante ou valeur par défaut.
 
-Les secrets ne sont jamais renvoyés au navigateur : seule leur présence est indiquée (et le nombre de clés pour
-`EXTENSION_SECRET_KEYS`). Pour `ALLOWED_SITE_IDS`, l'onglet indique seulement le nombre de sites et si le site
+Les secrets ne sont jamais renvoyés au navigateur : seule leur présence est indiquée. Pour `ALLOWED_SITE_IDS`, l'onglet indique seulement le nombre de sites et si le site
 courant en fait partie. Les valeurs se modifient dans Vercel (puis redéploiement) ou dans l'application Extensions.
 
 Requête utilisée pour la configuration (colonnes `key`, `value`, `environment`, `site_id`) :
@@ -130,12 +126,11 @@ cp .env.example .env   # puis compléter
 npm run dev
 ```
 
-Hors back-office, ouvrir `http://localhost:3000/?site_id=c42&lang=fr` avec `ALLOW_DEV_SESSION=true` (session
-sans signature, **à ne jamais activer en production**). Sans `DATABASE_URL`, `ONESTOCK_API_ROOT` et
+Hors back-office, ouvrir `http://localhost:3000/?site_id=c42&lang=fr`. Sans `DATABASE_URL`, `ONESTOCK_API_ROOT` et
 `ONESTOCK_TOKEN` remplacent la table `settings`.
 
 ```bash
-npm test          # signature, déchiffrement des settings, dates
+npm test          # déchiffrement des settings, documents, dates
 npm run typecheck
 npm run build
 ```
@@ -162,20 +157,17 @@ composants de `app/components/os/` par `import { OsButton, OsBadge, OsAlert, OsI
 
 | Message affiché | Cause et correction |
 |---|---|
-| `EXTENSION_SECRET_KEYS n'est pas défini…` | Variable absente sur Vercel : ajouter le secret fourni par OneStock et redéployer. |
-| `La signature OneStock ne correspond à aucune clé…` | Mauvais secret, ou secret d'une autre instance (qualif / training / production ont chacune le leur). |
-| `La signature OneStock a plus de 6 heures…` | Recharger la page du back-office. |
-| `Extension ouverte hors du back-office…` | Page ouverte directement : pour un test local, `ALLOW_DEV_SESSION=true`. |
-
-Le détail de chaque refus (raison, site, extension_id, nombre de clés, âge de la signature, jamais les secrets)
-est écrit dans les logs de la fonction Vercel (`[session] signature check failed`).
+| `Aucun site OneStock…` | Pas de `site_id` dans l'URL ni dans le contexte OneStock : ajouter `?site_id=…`. |
+| `Ce site n'est pas dans ALLOWED_SITE_IDS.` | Ajouter le site à `ALLOWED_SITE_IDS` sur Vercel puis redéployer. |
+| `Cet extension_id ne correspond pas à EXTENSION_ID.` | Corriger ou vider `EXTENSION_ID`. |
 
 ## Sécurité
 
-- Le token OneStock reste côté serveur ; le front ne détient qu'un JWT d'une heure (renouvelé automatiquement
-  à partir de la signature, valable 6 h).
-- La signature OneStock couvre `extension_id` et `user_id`, pas le `site_id` : définissez `ALLOWED_SITE_IDS`
-  pour qu'un utilisateur ne puisse pas viser un autre site présent dans `settings`.
+- **La signature de l'extension OneStock n'est pas vérifiée** : le serveur ne sait pas qui l'appelle. Toute
+  personne qui connaît l'URL peut lire et modifier des commandes des sites autorisés avec le token stocké en
+  base, et ouvrir les documents des colis. Limitez `ALLOWED_SITE_IDS` au strict nécessaire et protégez l'URL
+  (par exemple Deployment Protection de Vercel).
+- Le token OneStock reste côté serveur et n'est jamais envoyé au navigateur.
 - Les appels OneStock utilisent l'utilisateur technique de `onestock_token` : les droits effectifs sont ceux
   de ce compte. Restreignez l'accès à l'extension par rôle dans la configuration de l'anchor.
 - L'historique de conversation est conservé par le navigateur et renvoyé à chaque requête : il n'y a pas de

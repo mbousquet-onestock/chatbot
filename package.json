@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",
-    "jose": "^6.2.12",
     "markdown-it": "^15.0.2",
     "nuxt": "^4.6.0",
     "openai": "^7.28.0",
