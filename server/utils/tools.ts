@@ -11,12 +11,24 @@ interface ToolDefinition {
   input_schema: Record<string, unknown>;
 }
 
+/** Message à afficher à l'utilisateur (alerte dans la conversation), traduit côté front à partir de son code. */
+export interface ToolNotice {
+  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error";
+  order_id: string;
+  /** États des lignes annulées et des lignes dont la transition a été refusée. */
+  cancelled_states?: string[];
+  refused_states?: string[];
+}
+
 export interface ToolSpec {
   definition: ToolDefinition;
   /** Une action d'écriture n'est exécutée qu'après confirmation explicite de l'utilisateur. */
   write: boolean;
-  run: (siteId: string, input: Input) => Promise<OnestockResult>;
+  run: (siteId: string, input: Input) => Promise<OnestockResult & { notice?: ToolNotice }>;
 }
+
+/** État cible des lignes d'une commande annulée. */
+export const CANCELLED_STATE = "removed";
 
 const DEFAULT_SEARCH_FIELDS = [
   "id", "types", "date", "last_update", "sales_channel", "state", "customer",
@@ -486,8 +498,8 @@ export const TOOLS: Record<string, ToolSpec> = {
     definition: {
       name: "update_order_state",
       description:
-        "ÉCRITURE — Fait passer une commande d'un état à un autre (PATCH /v3/orders/{id}, order.from → order.to), " +
-        "par exemple pour l'annuler. `from` doit être l'état actuel (lire la commande avant) et la transition doit " +
+        "ÉCRITURE — Fait passer une commande d'un état à un autre (PATCH /v3/orders/{id}, order.from → order.to). " +
+        "Ne pas l'utiliser pour annuler une commande : utiliser cancel_order. `from` doit être l'état actuel (lire la commande avant) et la transition doit " +
         "exister dans le workflow du site. L'utilisateur devra confirmer avant exécution.",
       input_schema: {
         type: "object",
@@ -573,6 +585,72 @@ export const TOOLS: Record<string, ToolSpec> = {
     },
   },
 
+  cancel_order: {
+    write: true,
+    definition: {
+      name: "cancel_order",
+      description:
+        `ÉCRITURE — Annule une commande en passant toutes ses lignes (line item groups) à l'état « ${CANCELLED_STATE} » ` +
+        "(PATCH /v2/line_item_groups, une transition par état actuel). Les lignes déjà annulées sont ignorées. " +
+        "Si OneStock refuse la transition, rien n'est modifié pour ces lignes et le résultat l'indique " +
+        "(outcome = not_possible ou partial). L'utilisateur devra confirmer avant exécution.",
+      input_schema: { type: "object", properties: { order_id: { type: "string" } }, required: ["order_id"] },
+    },
+    async run(siteId, input) {
+      const orderId = requireString(input, "order_id");
+      const read = await onestockRequest(siteId, "GET", "/v2/line_item_groups", {
+        filter: { order_id: orderId },
+        fields: ["id", "item_id", "quantity", "state", "index_ranges"],
+      });
+      if (!read.ok) return read;
+
+      const data = read.data as { line_item_groups?: unknown } | unknown[];
+      const groups = (Array.isArray(data) ? data : Array.isArray(data?.line_item_groups) ? data.line_item_groups : []) as {
+        state?: string;
+        index_ranges?: { from: number; to: number }[];
+      }[];
+      const byState = new Map<string, { from: number; to: number }[]>();
+      for (const g of groups) {
+        if (!g.state || g.state === CANCELLED_STATE || !g.index_ranges?.length) continue;
+        byState.set(g.state, [...(byState.get(g.state) ?? []), ...g.index_ranges]);
+      }
+      if (!byState.size) {
+        return { ok: true, status: 200, data: { order_id: orderId, outcome: "nothing_to_cancel" }, notice: { code: "cancel_nothing", order_id: orderId } };
+      }
+
+      const cancelled: string[] = [];
+      const refused: { state: string; status: number; response: unknown }[] = [];
+      const failed: { state: string; status: number; response: unknown }[] = [];
+      for (const [state, ranges] of byState) {
+        const res = await onestockRequest(siteId, "PATCH", "/v2/line_item_groups", {
+          order_id: orderId,
+          index_ranges: ranges,
+          from: state,
+          to: CANCELLED_STATE,
+        });
+        if (res.ok) cancelled.push(state);
+        // 4xx : transition refusée par le workflow ; 5xx ou réseau : erreur technique.
+        else (res.status < 500 ? refused : failed).push({ state, status: res.status, response: res.data });
+      }
+
+      const outcome = failed.length && !cancelled.length && !refused.length
+        ? "error"
+        : !cancelled.length ? "not_possible" : refused.length || failed.length ? "partial" : "cancelled";
+      const code = ({ cancelled: "cancel_done", partial: "cancel_partial", not_possible: "cancel_not_possible", error: "cancel_error" } as const)[outcome];
+      return {
+        ok: true,
+        status: 200,
+        data: { order_id: orderId, outcome, cancelled_states: cancelled, refused, failed },
+        notice: {
+          code,
+          order_id: orderId,
+          cancelled_states: cancelled,
+          refused_states: [...refused, ...failed].map((r) => r.state),
+        },
+      };
+    },
+  },
+
   update_line_item_groups_state: {
     write: true,
     definition: {
@@ -615,7 +693,11 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = Object.values(
 export const isWriteTool = (name: string) => TOOLS[name]?.write === true;
 
 /** Exécute un outil et renvoie un résultat sérialisé pour le modèle (les erreurs y sont décrites, pas levées). */
-export async function runTool(siteId: string, name: string, input: unknown): Promise<{ content: string; isError: boolean }> {
+export async function runTool(
+  siteId: string,
+  name: string,
+  input: unknown,
+): Promise<{ content: string; isError: boolean; notice?: ToolNotice }> {
   const tool = TOOLS[name];
   if (!tool) return { content: `Unknown tool: ${name}`, isError: true };
   try {
@@ -625,6 +707,7 @@ export async function runTool(siteId: string, name: string, input: unknown): Pro
         res.ok ? res.data ?? { success: true, status: res.status } : { error: true, status: res.status, response: res.data },
       ),
       isError: !res.ok,
+      notice: res.notice,
     };
   } catch (err) {
     return { content: `Error: ${err instanceof Error ? err.message : String(err)}`, isError: true };

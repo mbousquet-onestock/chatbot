@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import MarkdownIt from "markdown-it";
-import type { ChatItem } from "~/composables/useChat";
+import type { ChatItem, ChatNotice } from "~/composables/useChat";
 
 const props = defineProps<{ item: ChatItem; streaming?: boolean; lang?: string }>();
 const t = computed(() => messagesFor(props.lang));
@@ -15,12 +15,34 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
 };
 const html = computed(() => md.render(props.item.text));
 
+/** Alerte du design system pour le résultat d'une annulation. */
+function noticeAlert(n: ChatNotice) {
+  const c = t.value.notices;
+  const states = (list?: string[]) => (list?.length ? list.join(", ") : "—");
+  switch (n.code) {
+    case "cancel_done":
+      return { type: "success" as const, title: c.doneTitle(n.order_id), subtitle: c.doneText };
+    case "cancel_partial":
+      return {
+        type: "warning" as const,
+        title: c.partialTitle(n.order_id),
+        subtitle: c.partialText(states(n.cancelled_states), states(n.refused_states)),
+      };
+    case "cancel_not_possible":
+      return { type: "danger" as const, title: c.notPossibleTitle(n.order_id), subtitle: c.notPossibleText(states(n.refused_states)) };
+    case "cancel_nothing":
+      return { type: "info" as const, title: c.nothingTitle(n.order_id), subtitle: c.nothingText };
+    default:
+      return { type: "danger" as const, title: c.errorTitle(n.order_id), subtitle: c.errorText };
+  }
+}
+
 const statusColor = { running: "blue", done: "primary", error: "red", declined: "grey" } as const;
 const statusIcon = { running: "loader", done: "check", error: "error-outline", declined: "close" } as const;
 </script>
 
 <template>
-  <div v-if="item.role === 'user' || item.text || item.tools.length || item.error || streaming" :class="['message', item.role]">
+  <div v-if="item.role === 'user' || item.text || item.tools.length || item.notices?.length || item.error || streaming" :class="['message', item.role]">
     <div v-if="item.role === 'assistant'" class="avatar"><OsIcon icon="onebot" size="s" /></div>
     <div class="bubble">
       <div v-if="item.tools.length" class="tools">
@@ -40,6 +62,11 @@ const statusIcon = { running: "loader", done: "check", error: "error-outline", d
         <OsLoadingEl width="40%" />
         <span class="os-body-s os-text-secondary">{{ t.thinking }}</span>
       </div>
+      <OsAlert
+        v-for="(notice, i) in item.notices ?? []"
+        :key="`notice-${i}`"
+        v-bind="noticeAlert(notice)"
+      />
       <OsAlert v-if="item.error" type="danger" :title="t.genericError" :subtitle="item.error" />
     </div>
   </div>

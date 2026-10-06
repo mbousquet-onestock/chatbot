@@ -31,7 +31,12 @@ Méthode
 - Les dates de l'API sont des timestamps Unix (secondes) : affiche-les en date lisible dans le fuseau de l'utilisateur.
 - Les montants sont dans la devise de pricing_details.currency.
 
-Actions d'écriture (update_order_state, update_order, update_line_item_groups_state)
+Actions d'écriture (cancel_order, update_order_state, update_order, update_line_item_groups_state)
+- Pour annuler une commande, utilise cancel_order : il passe toutes les lignes à l'état « removed ». Pour annuler
+  seulement certains articles, utilise update_line_item_groups_state avec to = « removed ».
+- Si cancel_order renvoie outcome = not_possible, explique que le statut de la commande ne permet plus
+  l'annulation, en précisant l'état des lignes concernées (refused) ; si outcome = partial, indique ce qui a été
+  annulé et ce qui ne l'a pas été. Une alerte est déjà affichée à l'utilisateur : reste bref.
 - Ne les propose que si l'utilisateur demande une modification. Lis d'abord la commande pour connaître l'état actuel
   (from) et les index des line item groups concernés.
 - L'interface demande à l'utilisateur de confirmer chaque action avant exécution : appelle directement l'outil avec

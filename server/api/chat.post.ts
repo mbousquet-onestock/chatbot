@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { requireSession } from "../utils/session";
 import { SYSTEM_PROMPT, contextPrompt, type UiContext } from "../utils/prompt";
-import { TOOL_DEFINITIONS, isWriteTool, runTool } from "../utils/tools";
+import { TOOL_DEFINITIONS, isWriteTool, runTool, type ToolNotice } from "../utils/tools";
 
 type MessageParam = OpenAI.Chat.ChatCompletionMessageParam;
 type ToolCall = OpenAI.Chat.ChatCompletionMessageFunctionToolCall;
@@ -20,6 +20,7 @@ interface ChatBody {
 type ChatEvent =
   | { type: "text"; delta: string }
   | { type: "tool"; id: string; name: string; input: unknown; status: "running" | "done" | "error" | "declined" }
+  | { type: "notice"; notice: ToolNotice }
   | { type: "confirm"; actions: { id: string; name: string; input: unknown }[] }
   | { type: "done"; messages: MessageParam[]; stop_reason: string | null }
   | { type: "error"; message: string };
@@ -90,6 +91,7 @@ export default defineEventHandler(async (event) => {
             send({ type: "tool", id: call.id, name, input: args, status: "running" });
             const res = await runTool(session.siteId, name, args);
             send({ type: "tool", id: call.id, name, input: args, status: res.isError ? "error" : "done" });
+            if (res.notice) send({ type: "notice", notice: res.notice });
             return { role: "tool", tool_call_id: call.id, content: res.content };
           }),
         );

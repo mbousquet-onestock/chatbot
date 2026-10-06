@@ -5,6 +5,20 @@ const fr = {
     site_not_allowed: "Ce site n'est pas dans ALLOWED_SITE_IDS.",
     unknown_extension: "Cet extension_id ne correspond pas à EXTENSION_ID.",
   } as Record<string, string>,
+  notices: {
+    doneTitle: (id: string) => `Commande ${id} annulée`,
+    doneText: "Toutes les lignes de la commande sont passées à l'état « removed ».",
+    partialTitle: (id: string) => `Annulation partielle de la commande ${id}`,
+    partialText: (done: string, refused: string) =>
+      `Lignes annulées (état d'origine : ${done}). Lignes non annulées, transition refusée depuis l'état : ${refused}.`,
+    notPossibleTitle: (id: string) => `Annulation impossible pour la commande ${id}`,
+    notPossibleText: (refused: string) =>
+      `Le statut de la commande ne permet plus l'annulation (état des lignes : ${refused}). Aucune ligne n'a été modifiée.`,
+    nothingTitle: (id: string) => `Commande ${id} déjà annulée`,
+    nothingText: "Toutes les lignes sont déjà à l'état « removed » : rien à modifier.",
+    errorTitle: (id: string) => `Erreur lors de l'annulation de la commande ${id}`,
+    errorText: "OneStock n'a pas pu traiter la demande. Réessayez plus tard.",
+  },
   tabChat: "Assistant",
   tabSettings: "Paramètres",
   settings: {
@@ -95,6 +109,7 @@ const fr = {
     get_line_item_groups: "Lecture des articles",
     get_order_items_details: "Fiches des articles",
     search_items: "Recherche dans le catalogue",
+    cancel_order: "Annulation de la commande",
     update_order_state: "Changement d'état de la commande",
     update_order: "Mise à jour de la commande",
     update_line_item_groups_state: "Changement d'état d'articles",
@@ -119,6 +134,20 @@ const en: Dict = {
     missing_site_id: "No OneStock site: open the extension from the back office or add ?site_id=… to the URL.",
     site_not_allowed: "This site is not in ALLOWED_SITE_IDS.",
     unknown_extension: "This extension_id does not match EXTENSION_ID.",
+  },
+  notices: {
+    doneTitle: (id: string) => `Order ${id} cancelled`,
+    doneText: "All order lines are now in the “removed” state.",
+    partialTitle: (id: string) => `Order ${id} partially cancelled`,
+    partialText: (done: string, refused: string) =>
+      `Cancelled lines (previous state: ${done}). Lines not cancelled, transition refused from state: ${refused}.`,
+    notPossibleTitle: (id: string) => `Order ${id} cannot be cancelled`,
+    notPossibleText: (refused: string) =>
+      `The order status no longer allows cancellation (line state: ${refused}). No line was changed.`,
+    nothingTitle: (id: string) => `Order ${id} already cancelled`,
+    nothingText: "All lines are already in the “removed” state: nothing to change.",
+    errorTitle: (id: string) => `Error while cancelling order ${id}`,
+    errorText: "OneStock could not process the request. Try again later.",
   },
   tabChat: "Assistant",
   tabSettings: "Settings",
@@ -206,6 +235,7 @@ const en: Dict = {
     get_line_item_groups: "Reading items",
     get_order_items_details: "Item details",
     search_items: "Searching the catalog",
+    cancel_order: "Order cancellation",
     update_order_state: "Order state change",
     update_order: "Order update",
     update_line_item_groups_state: "Item state change",

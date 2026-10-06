@@ -48,6 +48,7 @@ Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)     
 | `get_line_item_groups` | `GET /v2/line_item_groups` | lecture |
 | `get_order_items_details` | `GET /v3/orders/{id}` (`order_items.item.features.*` : nom, description, image…) | lecture |
 | `search_items` | `GET /v3/items` (catalogue : motif, product_ids, caractéristiques) | lecture |
+| `cancel_order` | `PATCH /v2/line_item_groups` : toutes les lignes → `removed` (une transition par état actuel) | **écriture** |
 | `update_order_state` | `PATCH /v3/orders/{id}` (`order.from` → `order.to`) | **écriture** |
 | `update_order` | `PATCH /v3/orders/{id}` (client, adresse, informations) | **écriture** |
 | `update_line_item_groups_state` | `PATCH /v2/line_item_groups` | **écriture** |
@@ -58,6 +59,11 @@ le prévoit la documentation de l'API. `site_id` et `token` sont ajoutés par le
 **Documents des colis** : `get_order_parcels` ajoute à chaque colis des liens `document_links` vers
 `/api/documents/{id}?site_id=…`. Cette route lit `GET /v3/documents/{id}` et renvoie le fichier, ou à défaut
 l'aperçu en image contenu dans la réponse, pour l'ouvrir dans un onglet.
+
+**Annulation d'une commande** : `cancel_order` lit les lignes de la commande, ignore celles déjà à `removed`
+et demande la transition `état actuel → removed` pour chaque état. Si OneStock refuse une transition (erreur 4xx),
+ces lignes ne sont pas modifiées et une alerte l'indique : annulation impossible (« le statut de la commande ne
+permet plus l'annulation ») ou partielle (lignes annulées / lignes refusées, avec leur état).
 
 **Aucune écriture sans confirmation** : quand le modèle demande une action d'écriture, le serveur s'arrête et
 l'interface affiche une carte « Action à confirmer » avec les paramètres exacts. L'appel à OneStock n'est fait

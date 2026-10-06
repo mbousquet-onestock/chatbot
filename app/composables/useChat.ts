@@ -14,10 +14,19 @@ export interface PendingAction {
   input: Record<string, unknown>;
 }
 
+/** Alerte produite par un outil (ex. résultat d'une annulation), voir ToolNotice côté serveur. */
+export interface ChatNotice {
+  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error";
+  order_id: string;
+  cancelled_states?: string[];
+  refused_states?: string[];
+}
+
 export interface ChatItem {
   role: "user" | "assistant";
   text: string;
   tools: ToolActivity[];
+  notices?: ChatNotice[];
   error?: string;
 }
 
@@ -92,6 +101,9 @@ export function useChat() {
         else reply.tools.push({ id: event.id, name: event.name, status: event.status });
         break;
       }
+      case "notice":
+        reply.notices = [...(reply.notices ?? []), event.notice];
+        break;
       case "confirm":
         pending.value = event.actions;
         break;
