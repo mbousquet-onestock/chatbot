@@ -1,17 +1,17 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { requireSession } from "../utils/session";
 import { SYSTEM_PROMPT, contextPrompt, type UiContext } from "../utils/prompt";
 import { TOOL_DEFINITIONS, isWriteTool, runTool } from "../utils/tools";
 
-type MessageParam = Anthropic.Beta.BetaMessageParam;
-type ToolUse = Anthropic.Beta.BetaToolUseBlock;
+type MessageParam = OpenAI.Chat.ChatCompletionMessageParam;
+type ToolCall = OpenAI.Chat.ChatCompletionMessageFunctionToolCall;
 
 interface ChatBody {
-  /** Historique complet renvoyé tel quel par le client (blocs de réflexion compris). */
+  /** Historique (hors messages système) renvoyé tel quel par le client. */
   messages?: MessageParam[];
   /** Nouveau message de l'utilisateur. */
   input?: string;
-  /** Réponse aux actions d'écriture en attente : id du tool_use → approuvée ou non. */
+  /** Réponse aux actions d'écriture en attente : id de l'appel d'outil → approuvée ou non. */
   decisions?: Record<string, boolean>;
   context?: UiContext;
 }
@@ -24,11 +24,27 @@ type ChatEvent =
   | { type: "done"; messages: MessageParam[]; stop_reason: string | null }
   | { type: "error"; message: string };
 
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5-5";
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 const MAX_ITERATIONS = 12;
 const MAX_BODY_CHARS = 4_000_000;
 
-let anthropic: Anthropic | undefined;
+let openai: OpenAI | undefined;
+
+/** Arguments d'un appel d'outil (JSON produit par le modèle). */
+function parseArguments(call: ToolCall): Record<string, unknown> {
+  try {
+    const value = JSON.parse(call.function.arguments || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Appels d'outils (de type fonction) d'un message assistant. */
+function functionCalls(message: MessageParam | undefined): ToolCall[] {
+  if (message?.role !== "assistant" || !message.tool_calls) return [];
+  return message.tool_calls.filter((c): c is ToolCall => c.type === "function");
+}
 
 export default defineEventHandler(async (event) => {
   const session = requireSession(event);
@@ -36,15 +52,18 @@ export default defineEventHandler(async (event) => {
   if (!raw || raw.length > MAX_BODY_CHARS) throw createError({ statusCode: 413, statusMessage: "Conversation too large" });
   const body = JSON.parse(raw) as ChatBody;
 
-  const messages: MessageParam[] = Array.isArray(body.messages) ? [...body.messages] : [];
+  // Les messages système sont toujours fournis par le serveur, jamais par le client.
+  const messages: MessageParam[] = (Array.isArray(body.messages) ? body.messages : []).filter(
+    (m) => m.role === "user" || m.role === "assistant" || m.role === "tool",
+  );
   const input = body.input?.trim();
   if (!input && !body.decisions) throw createError({ statusCode: 400, statusMessage: "input or decisions required" });
 
-  anthropic ??= new Anthropic();
-  const client = anthropic;
-  const system: Anthropic.Beta.BetaTextBlockParam[] = [
-    { type: "text", text: SYSTEM_PROMPT },
-    { type: "text", text: contextPrompt(body.context ?? {}, session.siteId) },
+  openai ??= new OpenAI();
+  const client = openai;
+  const system: MessageParam[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: contextPrompt(body.context ?? {}, session.siteId) },
   ];
 
   setResponseHeaders(event, {
@@ -58,30 +77,29 @@ export default defineEventHandler(async (event) => {
     async start(controller) {
       const send = (e: ChatEvent) => controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
 
-      /** Exécute les outils d'un tour assistant et ajoute leurs résultats (dans un seul message utilisateur). */
-      const executeTools = async (toolUses: ToolUse[], decisions: Record<string, boolean> = {}) => {
+      /** Exécute les appels d'outils d'un tour assistant et ajoute un message `tool` par appel. */
+      const executeTools = async (calls: ToolCall[], decisions: Record<string, boolean> = {}) => {
         const results = await Promise.all(
-          toolUses.map(async (tu): Promise<Anthropic.Beta.BetaToolResultBlockParam> => {
-            if (isWriteTool(tu.name) && decisions[tu.id] !== true) {
-              send({ type: "tool", id: tu.id, name: tu.name, input: tu.input, status: "declined" });
-              return { type: "tool_result", tool_use_id: tu.id, content: "L'utilisateur a refusé cette action : elle n'a pas été exécutée." };
+          calls.map(async (call): Promise<MessageParam> => {
+            const name = call.function.name;
+            const args = parseArguments(call);
+            if (isWriteTool(name) && decisions[call.id] !== true) {
+              send({ type: "tool", id: call.id, name, input: args, status: "declined" });
+              return { role: "tool", tool_call_id: call.id, content: "L'utilisateur a refusé cette action : elle n'a pas été exécutée." };
             }
-            send({ type: "tool", id: tu.id, name: tu.name, input: tu.input, status: "running" });
-            const res = await runTool(session.siteId, tu.name, tu.input);
-            send({ type: "tool", id: tu.id, name: tu.name, input: tu.input, status: res.isError ? "error" : "done" });
-            return { type: "tool_result", tool_use_id: tu.id, content: res.content, is_error: res.isError };
+            send({ type: "tool", id: call.id, name, input: args, status: "running" });
+            const res = await runTool(session.siteId, name, args);
+            send({ type: "tool", id: call.id, name, input: args, status: res.isError ? "error" : "done" });
+            return { role: "tool", tool_call_id: call.id, content: res.content };
           }),
         );
-        messages.push({ role: "user", content: results });
+        messages.push(...results);
       };
 
       try {
         if (body.decisions) {
-          // Reprise après confirmation : le dernier tour assistant contient les tool_use en attente.
-          const last = messages.at(-1);
-          const pending = last?.role === "assistant" && Array.isArray(last.content)
-            ? (last.content.filter((b) => b.type === "tool_use") as ToolUse[])
-            : [];
+          // Reprise après confirmation : le dernier message assistant contient les appels en attente.
+          const pending = functionCalls(messages.at(-1));
           if (!pending.length) throw new Error("No pending action to confirm");
           await executeTools(pending, body.decisions);
         } else {
@@ -91,50 +109,52 @@ export default defineEventHandler(async (event) => {
         let stopReason: string | null = null;
         let sentText = false;
         for (let i = 0; i < MAX_ITERATIONS; i++) {
-          const stream = client.beta.messages.stream({
+          const stream = client.chat.completions.stream({
             model: MODEL,
-            max_tokens: 16000,
-            system,
+            messages: [...system, ...messages],
             tools: TOOL_DEFINITIONS,
-            messages,
-            thinking: { type: "adaptive" },
-            output_config: { effort: "medium" },
-            cache_control: { type: "ephemeral" },
-            betas: ["server-side-fallback-2026-07-01"],
-            fallbacks: "default",
           });
           let first = true;
-          stream.on("text", (delta) => {
+          stream.on("content", (delta) => {
             // Le texte de plusieurs tours (avant/après les outils) s'affiche dans la même bulle : on sépare les paragraphes.
             if (first && sentText) delta = `\n\n${delta}`;
             first = false;
             sentText = true;
             send({ type: "text", delta });
           });
-          const message = await stream.finalMessage();
-          stopReason = message.stop_reason;
+          const completion = await stream.finalChatCompletion();
+          const choice = completion.choices[0];
+          stopReason = choice?.finish_reason ?? null;
+          if (!choice) break;
 
-          if (message.stop_reason === "refusal") {
-            send({ type: "error", message: "La demande a été refusée par le modèle." });
+          const message = choice.message;
+          const calls = (message.tool_calls ?? []).filter((c): c is ToolCall => c.type === "function");
+          messages.push({
+            role: "assistant",
+            content: message.content ?? null,
+            ...(calls.length ? { tool_calls: calls.map(({ id, type, function: fn }) => ({ id, type, function: fn })) } : {}),
+          });
+          if (message.refusal) {
+            send({ type: "error", message: message.refusal });
             break;
           }
-          messages.push({ role: "assistant", content: message.content as MessageParam["content"] });
-          if (message.stop_reason === "pause_turn") continue;
-          if (message.stop_reason !== "tool_use") break;
+          if (!calls.length) break;
 
-          const toolUses = message.content.filter((b): b is ToolUse => b.type === "tool_use");
-          const writes = toolUses.filter((tu) => isWriteTool(tu.name));
+          const writes = calls.filter((c) => isWriteTool(c.function.name));
           if (writes.length) {
             // Rien n'est exécuté avant la décision de l'utilisateur ; les lectures du même tour seront faites ensuite.
-            send({ type: "confirm", actions: writes.map((tu) => ({ id: tu.id, name: tu.name, input: tu.input })) });
+            send({
+              type: "confirm",
+              actions: writes.map((c) => ({ id: c.id, name: c.function.name, input: parseArguments(c) })),
+            });
             break;
           }
-          await executeTools(toolUses);
+          await executeTools(calls);
         }
         send({ type: "done", messages, stop_reason: stopReason });
       } catch (err) {
         console.error("[chat]", err);
-        const message = err instanceof Anthropic.APIError
+        const message = err instanceof OpenAI.APIError
           ? `Erreur du service d'IA (${err.status ?? "réseau"}).`
           : err instanceof Error ? err.message : String(err);
         send({ type: "error", message });

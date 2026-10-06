@@ -1,7 +1,7 @@
 # Assistant commandes OneStock
 
 Chatbot qui s'affiche dans le back-office OneStock (UI Extension) pour **consulter, comprendre et
-modifier des commandes client** en langage naturel. Il s'appuie sur Claude (API Anthropic) et sur les
+modifier des commandes client** en langage naturel. Il s'appuie sur OpenAI (`gpt-4o`, function calling) et sur les
 API OneStock du site de l'utilisateur.
 
 - **Front** : Nuxt 4 / Vue 3, composants au format du design system OneStock (`OsButton`, `OsBadge`, `OsAlert`…).
@@ -18,7 +18,7 @@ Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)     
         │ ── onestock_data (signature, order_id) ─▶ │
                                                      │ ── POST /api/session ──▶ vérifie la signature
                                                      │ ◀──── JWT (1 h) ──────── │
-                                                     │ ── POST /api/chat ─────▶ Claude + outils ──▶ (token lu en base)
+                                                     │ ── POST /api/chat ─────▶ GPT-4o + outils ──▶ (token lu en base)
                                                      │ ◀── NDJSON (texte, outils, confirmation) ──
 ```
 
@@ -31,7 +31,7 @@ Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)     
 3. **Configuration** : pour ce site, le serveur lit `onestock_token` et `onestock_api_root` dans `settings`
    (valeur propre au site prioritaire sur `*`), déchiffre le token (`server/lib/settings-secrets.mjs`, copie du
    module de l'application Extensions) et le garde 5 min en cache mémoire. Le token ne quitte jamais le serveur.
-4. **Chat** : `/api/chat` fait tourner Claude avec les outils ci-dessous et diffuse la réponse en streaming.
+4. **Chat** : `/api/chat` fait tourner le modèle OpenAI avec les outils ci-dessous et diffuse la réponse en streaming.
 
 ### Outils exposés au modèle
 
@@ -81,8 +81,8 @@ Variables d'environnement (voir `.env.example`) :
 | `EXTENSION_ID` | *Optionnel.* Restreint à cet `extension_id` |
 | `ALLOWED_SITE_IDS` | *Recommandé.* Liste des `site_id` autorisés |
 | `JWT_SECRET` | *Optionnel.* Clé des sessions (dérivée de `EXTENSION_SECRET_KEYS` sinon) |
-| `ANTHROPIC_API_KEY` | Clé API Claude |
-| `ANTHROPIC_MODEL` | *Optionnel.* Défaut `claude-opus-5-5` |
+| `OPENAI_API_KEY` | Clé API OpenAI |
+| `OPENAI_MODEL` | *Optionnel.* Défaut `gpt-4o` |
 | `FRAME_ANCESTORS` | *Optionnel.* Origines autorisées à intégrer l'iframe (défaut : domaines OneStock) |
 
 ### Onglet « Paramètres »
@@ -91,7 +91,7 @@ L'interface a deux onglets : **Assistant** et **Paramètres**. L'onglet Paramèt
 lecture seule, accessible à tout utilisateur de l'extension) affiche :
 
 - la session : site, utilisateur et extension issus de la signature ;
-- les connexions testées : base de données, API OneStock (recherche d'une commande) et API Claude (lecture du
+- les connexions testées : base de données, API OneStock (recherche d'une commande) et API OpenAI (lecture du
   modèle, sans consommer de tokens) ;
 - les lignes `onestock_token` / `onestock_api_root` retenues dans `settings` pour le site (portée, chiffrement) ;
 - chaque variable d'environnement : définie, manquante ou valeur par défaut.

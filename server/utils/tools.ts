@@ -1,11 +1,18 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 import { toOnestockDate } from "./dates";
 import { encodeId, onestockRequest, type OnestockResult } from "./onestock";
 
 type Input = Record<string, any>;
 
+/** Définition d'un outil : nom, description et schéma JSON des paramètres. */
+interface ToolDefinition {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
 export interface ToolSpec {
-  definition: Anthropic.Beta.BetaTool;
+  definition: ToolDefinition;
   /** Une action d'écriture n'est exécutée qu'après confirmation explicite de l'utilisateur. */
   write: boolean;
   run: (siteId: string, input: Input) => Promise<OnestockResult>;
@@ -361,7 +368,11 @@ export const TOOLS: Record<string, ToolSpec> = {
   },
 };
 
-export const TOOL_DEFINITIONS: Anthropic.Beta.BetaTool[] = Object.values(TOOLS).map((t) => t.definition);
+/** Outils au format « function calling » d'OpenAI. */
+export const TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = Object.values(TOOLS).map(({ definition }) => ({
+  type: "function",
+  function: { name: definition.name, description: definition.description, parameters: definition.input_schema },
+}));
 
 export const isWriteTool = (name: string) => TOOLS[name]?.write === true;
 

@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { requireSession } from "../utils/session";
 import { databaseUrl, readSettingsRows } from "../utils/settings";
 import { onestockRequest } from "../utils/onestock";
@@ -50,7 +50,7 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ ms: number; result?: T;
 /** État de la configuration (variables d'environnement et table settings) et tests de connexion, en lecture seule. */
 export default defineEventHandler(async (event) => {
   const session = requireSession(event);
-  const model = env("ANTHROPIC_MODEL") ?? "claude-opus-5-5";
+  const model = env("OPENAI_MODEL") ?? "gpt-4o";
   const allowedSites = csv("ALLOWED_SITE_IDS");
 
   const environment: ConfigEntry[] = [
@@ -68,8 +68,8 @@ export default defineEventHandler(async (event) => {
       // Liste des autres sites non exposée : seulement leur nombre et la présence du site courant.
       note: allowedSites.length ? `${allowedSites.length}|${allowedSites.includes(session.siteId) ? "current" : "not-current"}` : undefined,
     },
-    envEntry("ANTHROPIC_API_KEY", { required: true, secret: true }),
-    envEntry("ANTHROPIC_MODEL", { defaultValue: "claude-opus-5-5" }),
+    envEntry("OPENAI_API_KEY", { required: true, secret: true }),
+    envEntry("OPENAI_MODEL", { defaultValue: "gpt-4o" }),
     envEntry("FRAME_ANCESTORS", { defaultValue: "'self' https://*.onestock-retail.com https://*.onestock-retail.dev" }),
   ];
   // Variables de développement local, affichées seulement si elles sont utilisées (pas de base).
@@ -127,16 +127,16 @@ export default defineEventHandler(async (event) => {
     checks.push({ name: "onestock", ok: false, detail: "missing-settings" });
   }
 
-  // API Claude : lecture du modèle configuré (aucun token consommé).
-  if (env("ANTHROPIC_API_KEY")) {
-    const ai = await timed(() => new Anthropic().models.retrieve(model));
+  // API OpenAI : lecture du modèle configuré (aucun token consommé).
+  if (env("OPENAI_API_KEY")) {
+    const ai = await timed(() => new OpenAI().models.retrieve(model));
     checks.push(
       ai.result
-        ? { name: "anthropic", ok: true, detail: `${ai.result.display_name} · ${ai.ms} ms` }
-        : { name: "anthropic", ok: false, detail: ai.error ?? "" },
+        ? { name: "openai", ok: true, detail: `${ai.result.id} · ${ai.ms} ms` }
+        : { name: "openai", ok: false, detail: ai.error ?? "" },
     );
   } else {
-    checks.push({ name: "anthropic", ok: false, detail: "missing-key" });
+    checks.push({ name: "openai", ok: false, detail: "missing-key" });
   }
 
   return {

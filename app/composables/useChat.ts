@@ -1,6 +1,6 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 
-type MessageParam = Anthropic.Beta.BetaMessageParam;
+type MessageParam = OpenAI.Chat.ChatCompletionMessageParam;
 
 export interface ToolActivity {
   id: string;
@@ -120,8 +120,7 @@ export function useChat() {
     await run({ decisions });
     // Échec avant exécution : l'historique attend toujours la décision, on la redemande.
     const last = history.value.at(-1);
-    const stillPending = last?.role === "assistant" && Array.isArray(last.content)
-      && last.content.some((b) => b.type === "tool_use" && b.id in decisions);
+    const stillPending = last?.role === "assistant" && !!last.tool_calls?.some((c) => c.id in decisions);
     if (stillPending && !pending.value.length) pending.value = actions;
   }
 
