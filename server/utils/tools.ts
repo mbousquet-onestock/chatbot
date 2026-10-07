@@ -24,28 +24,7 @@ export interface ToolSpec {
   definition: ToolDefinition;
   /** Une action d'écriture n'est exécutée qu'après confirmation explicite de l'utilisateur. */
   write: boolean;
-  run: (siteId: string, input: Input, ctx: ToolContext) => Promise<OnestockResult & { notice?: ToolNotice }>;
-}
-
-/** Contexte de l'appel : utilisateur OneStock à l'origine de l'action (vide s'il n'est pas connu). */
-export interface ToolContext {
-  userId: string;
-}
-
-/**
- * PATCH d'une commande avec `user_id` : OneStock attribue alors la modification à cet utilisateur dans
- * l'historique de la commande. Si l'utilisateur est refusé (4xx), on réessaie sans lui : la modification
- * passe, attribuée à l'utilisateur technique du token, et le résultat le signale.
- */
-async function patchOrder(siteId: string, orderId: string, order: Record<string, unknown>, ctx: ToolContext) {
-  const path = `/v3/orders/${encodeId(orderId)}`;
-  if (!ctx.userId) return onestockRequest(siteId, "PATCH", path, { order });
-  const res = await onestockRequest(siteId, "PATCH", path, { order, user_id: ctx.userId });
-  if (res.ok || res.status >= 500) return res;
-  const retry = await onestockRequest(siteId, "PATCH", path, { order });
-  return retry.ok
-    ? { ...retry, data: { ...(typeof retry.data === "object" && retry.data ? retry.data : {}), history_user: "technical_user", user_id_refused: ctx.userId } }
-    : res;
+  run: (siteId: string, input: Input) => Promise<OnestockResult & { notice?: ToolNotice }>;
 }
 
 /** État cible des lignes d'une commande annulée. */
@@ -533,8 +512,10 @@ export const TOOLS: Record<string, ToolSpec> = {
         required: ["order_id", "from", "to"],
       },
     },
-    run: (siteId, input, ctx) =>
-      patchOrder(siteId, requireString(input, "order_id"), { from: requireString(input, "from"), to: requireString(input, "to") }, ctx),
+    run: (siteId, input) =>
+      onestockRequest(siteId, "PATCH", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, {
+        order: { from: requireString(input, "from"), to: requireString(input, "to") },
+      }),
   },
 
   update_order: {
@@ -580,7 +561,7 @@ export const TOOLS: Record<string, ToolSpec> = {
         required: ["order_id"],
       },
     },
-    run(siteId, input, ctx) {
+    run(siteId, input) {
       const a = input.delivery_address;
       const order = compact({
         customer: input.customer && Object.keys(input.customer).length ? input.customer : undefined,
@@ -601,7 +582,7 @@ export const TOOLS: Record<string, ToolSpec> = {
           : undefined,
       });
       if (!Object.keys(order).length) throw new Error("Nothing to update");
-      return patchOrder(siteId, requireString(input, "order_id"), order, ctx);
+      return onestockRequest(siteId, "PATCH", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, { order });
     },
   },
 
@@ -717,12 +698,11 @@ export async function runTool(
   siteId: string,
   name: string,
   input: unknown,
-  ctx: ToolContext = { userId: "" },
 ): Promise<{ content: string; isError: boolean; notice?: ToolNotice }> {
   const tool = TOOLS[name];
   if (!tool) return { content: `Unknown tool: ${name}`, isError: true };
   try {
-    const res = await tool.run(siteId, (input ?? {}) as Input, ctx);
+    const res = await tool.run(siteId, (input ?? {}) as Input);
     return {
       content: JSON.stringify(
         res.ok ? res.data ?? { success: true, status: res.status } : { error: true, status: res.status, response: res.data },

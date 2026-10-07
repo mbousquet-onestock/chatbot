@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
               return { role: "tool", tool_call_id: call.id, content: "L'utilisateur a refusé cette action : elle n'a pas été exécutée." };
             }
             send({ type: "tool", id: call.id, name, input: args, status: "running" });
-            const res = await runTool(session.siteId, name, args, { userId: session.userId });
+            const res = await runTool(session.siteId, name, args);
             send({ type: "tool", id: call.id, name, input: args, status: res.isError ? "error" : "done" });
             if (res.notice) send({ type: "notice", notice: res.notice });
             return { role: "tool", tool_call_id: call.id, content: res.content };

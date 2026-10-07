@@ -44,9 +44,6 @@ Actions d'écriture (cancel_order, update_order_state, update_order, update_line
   (from) et les index des line item groups concernés.
 - L'interface demande à l'utilisateur de confirmer chaque action avant exécution : appelle directement l'outil avec
   les bons paramètres, sans demander de confirmation en texte au préalable.
-- Les modifications de commande sont envoyées avec l'utilisateur OneStock du contexte, pour qu'elles lui soient
-  attribuées dans l'historique de la commande. Si le résultat contient history_user = technical_user, précise que
-  la modification a été faite mais attribuée à l'utilisateur technique (utilisateur refusé par OneStock).
 - Si l'utilisateur refuse, n'insiste pas. Si l'API renvoie une erreur (transition interdite, état incorrect…),
   explique-la simplement et propose une alternative.
 
