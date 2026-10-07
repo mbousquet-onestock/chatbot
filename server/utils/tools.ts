@@ -24,7 +24,12 @@ export interface ToolSpec {
   definition: ToolDefinition;
   /** Une action d'écriture n'est exécutée qu'après confirmation explicite de l'utilisateur. */
   write: boolean;
-  run: (siteId: string, input: Input) => Promise<OnestockResult & { notice?: ToolNotice }>;
+  run: (siteId: string, input: Input, ctx: ToolContext) => Promise<OnestockResult & { notice?: ToolNotice }>;
+}
+
+/** Contexte de l'appel : utilisateur OneStock à l'origine de la demande (vide s'il n'est pas connu). */
+export interface ToolContext {
+  userId: string;
 }
 
 /** État cible des lignes d'une commande annulée. */
@@ -85,6 +90,23 @@ const indexRanges = {
     required: ["from", "to"],
   },
 } as const;
+
+/** Lien vers la route /api/invoices qui trace la consultation puis ouvre la facture de la commande. */
+export function invoiceLink(orderId: string, siteId: string, userId: string): string {
+  const user = userId ? `&user_id=${encodeURIComponent(userId)}` : "";
+  return `/api/invoices/${encodeURIComponent(orderId)}?site_id=${encodeURIComponent(siteId)}${user}`;
+}
+
+/** Remplace l'URL de facture (information.invoice) par un lien qui trace sa consultation (`invoice_link`). */
+function withInvoiceLink(data: unknown, orderId: string, siteId: string, userId: string): unknown {
+  const order = ((data as { order?: unknown })?.order ?? data) as { information?: Record<string, unknown> } | undefined;
+  const invoice = order?.information?.invoice;
+  if (typeof invoice === "string" && invoice) {
+    order!.information = { ...order!.information, invoice: "(voir invoice_link)" };
+    (order as Record<string, unknown>).invoice_link = invoiceLink(orderId, siteId, userId);
+  }
+  return data;
+}
 
 /** Lien vers la route /api/documents qui affiche un document OneStock. */
 export function documentLink(documentId: string, siteId: string): string {
@@ -194,10 +216,13 @@ export const TOOLS: Record<string, ToolSpec> = {
         required: ["order_id"],
       },
     },
-    run: (siteId, input) =>
-      onestockRequest(siteId, "GET", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, {
+    async run(siteId, input, ctx) {
+      const orderId = requireString(input, "order_id");
+      const res = await onestockRequest(siteId, "GET", `/v3/orders/${encodeId(orderId)}`, {
         fields: input.fields?.length ? input.fields : DEFAULT_ORDER_FIELDS,
-      }),
+      });
+      return res.ok ? { ...res, data: withInvoiceLink(res.data, orderId, siteId, ctx.userId) } : res;
+    },
   },
 
   get_orders: {
@@ -291,7 +316,7 @@ export const TOOLS: Record<string, ToolSpec> = {
         "`document_links` à afficher tel quel en Markdown pour l'ouvrir.",
       input_schema: { type: "object", properties: { order_id: { type: "string" } }, required: ["order_id"] },
     },
-    async run(siteId, input) {
+    async run(siteId, input, ctx) {
       const res = await onestockRequest(siteId, "GET", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, {
         fields: [
           "id", "state", "information", "parcels.id", "parcels.state", "parcels.line_item_index_ranges", "parcels.information",
@@ -300,7 +325,9 @@ export const TOOLS: Record<string, ToolSpec> = {
           "parcels.shipment.tracking_link", "parcels.date", "parcels.last_update", "parcels.documents",
         ],
       });
-      return res.ok ? { ...res, data: withDocumentLinks(res.data, siteId) } : res;
+      return res.ok
+        ? { ...res, data: withInvoiceLink(withDocumentLinks(res.data, siteId), requireString(input, "order_id"), siteId, ctx.userId) }
+        : res;
     },
   },
 
@@ -698,11 +725,12 @@ export async function runTool(
   siteId: string,
   name: string,
   input: unknown,
+  ctx: ToolContext = { userId: "" },
 ): Promise<{ content: string; isError: boolean; notice?: ToolNotice }> {
   const tool = TOOLS[name];
   if (!tool) return { content: `Unknown tool: ${name}`, isError: true };
   try {
-    const res = await tool.run(siteId, (input ?? {}) as Input);
+    const res = await tool.run(siteId, (input ?? {}) as Input, ctx);
     return {
       content: JSON.stringify(
         res.ok ? res.data ?? { success: true, status: res.status } : { error: true, status: res.status, response: res.data },

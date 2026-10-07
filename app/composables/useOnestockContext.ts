@@ -105,6 +105,11 @@ async function start() {
   }
   if (state.context.site_id) {
     state.status = "ready";
+    // Chat ouvert sur une commande (anchor bo.order.action) : trace dans les commentaires de la commande.
+    const orderId = state.context.order_id;
+    if (orderId) {
+      apiFetch(`/api/orders/${encodeURIComponent(orderId)}/chat-opened`, { method: "POST" }).catch(() => {});
+    }
   } else {
     state.status = "error";
     state.error = "missing_site_id";
