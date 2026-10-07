@@ -72,6 +72,10 @@ et demande la transition `état actuel → removed` pour chaque état. Si OneSto
 ces lignes ne sont pas modifiées et une alerte l'indique : annulation impossible (« le statut de la commande ne
 permet plus l'annulation ») ou partielle (lignes annulées / lignes refusées, avec leur état).
 
+**Nouvelle adresse** : elle doit être fournie par l'utilisateur. Avant d'afficher la carte de confirmation, le
+serveur vérifie que l'adresse proposée est complète (rue, code postal, ville, pays) et différente de l'adresse
+actuelle ; sinon aucune carte n'est affichée et l'assistant demande l'adresse à l'utilisateur.
+
 **Adresse de livraison** : elle n'est modifiable que si la commande n'est pas au statut `fulfilled`. `update_order`
 relit le statut juste avant l'écriture ; s'il vaut `fulfilled`, rien n'est envoyé à OneStock et une alerte
 l'indique (statuts bloquants : `SHIPPING_ADDRESS_LOCKED_STATES` dans `server/utils/tools.ts`).

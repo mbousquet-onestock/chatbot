@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { requireSession } from "../utils/session";
 import { SYSTEM_PROMPT, contextPrompt, type UiContext } from "../utils/prompt";
-import { TOOL_DEFINITIONS, isWriteTool, runTool, type ToolNotice } from "../utils/tools";
+import { TOOL_DEFINITIONS, isWriteTool, runTool, validateTool, type ToolNotice } from "../utils/tools";
 
 type MessageParam = OpenAI.Chat.ChatCompletionMessageParam;
 type ToolCall = OpenAI.Chat.ChatCompletionMessageFunctionToolCall;
@@ -143,6 +143,23 @@ export default defineEventHandler(async (event) => {
           if (!calls.length) break;
 
           const writes = calls.filter((c) => isWriteTool(c.function.name));
+          // Écritures aux paramètres incomplets (ex. adresse non fournie) : pas de carte de confirmation, le modèle
+          // reçoit la raison et doit demander l'information manquante à l'utilisateur.
+          const problems = new Map<string, string>();
+          for (const c of writes) {
+            const problem = await validateTool(session.siteId, c.function.name, parseArguments(c));
+            if (problem) problems.set(c.id, problem);
+          }
+          if (problems.size) {
+            messages.push(
+              ...calls.map((c): MessageParam => ({
+                role: "tool",
+                tool_call_id: c.id,
+                content: problems.get(c.id) ?? "Non exécuté : une autre action de ce tour doit d'abord être complétée.",
+              })),
+            );
+            continue;
+          }
           if (writes.length) {
             // Rien n'est exécuté avant la décision de l'utilisateur ; les lectures du même tour seront faites ensuite.
             send({

@@ -1,4 +1,5 @@
 import type OpenAI from "openai";
+import { missingAddressParts, sameAddress } from "./addresses";
 import { toOnestockDate } from "./dates";
 import { encodeId, onestockRequest, type OnestockResult } from "./onestock";
 
@@ -30,6 +31,11 @@ export interface ToolSpec {
   /** Une action d'écriture n'est exécutée qu'après confirmation explicite de l'utilisateur. */
   write: boolean;
   run: (siteId: string, input: Input, ctx: ToolContext) => Promise<OnestockResult & { notice?: ToolNotice }>;
+  /**
+   * Contrôle d'une action d'écriture avant la carte de confirmation : renvoie un message pour le modèle si les
+   * paramètres ne peuvent pas être proposés tels quels (l'utilisateur ne voit alors pas de carte).
+   */
+  validate?: (siteId: string, input: Input) => Promise<string | undefined>;
 }
 
 /** Contexte de l'appel : utilisateur OneStock à l'origine de la demande (vide s'il n'est pas connu). */
@@ -628,6 +634,37 @@ export const TOOLS: Record<string, ToolSpec> = {
         required: ["order_id"],
       },
     },
+    async validate(siteId, input) {
+      const addresses = [
+        { key: "shipping_address", label: "de livraison", value: input.shipping_address ?? input.delivery_address, current: "delivery" },
+        { key: "billing_address", label: "de facturation", value: input.billing_address, current: "billing" },
+      ].filter((a) => a.value !== undefined && a.value !== null);
+      if (!addresses.length) return undefined;
+
+      // 1. Adresse complète : rue, code postal, ville et pays, tous fournis par l'utilisateur.
+      for (const a of addresses) {
+        const missing = missingAddressParts(a.value);
+        if (missing.length) {
+          return `Adresse ${a.label} incomplète (manque : ${missing.join(", ")}). Rien n'a été proposé à l'utilisateur : ` +
+            `demande-lui l'adresse ${a.label} complète, sans compléter ni deviner les éléments manquants.`;
+        }
+      }
+      // 2. Adresse différente de l'actuelle : sinon, aucune nouvelle adresse n'a été donnée.
+      const current = await onestockRequest(siteId, "GET", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, {
+        fields: ["id", "delivery.destination.address", "pricing_details.address"],
+      });
+      if (current.ok) {
+        const order = ((current.data as { order?: unknown })?.order ?? current.data) as Input;
+        for (const a of addresses) {
+          const existing = a.current === "delivery" ? order?.delivery?.destination?.address : order?.pricing_details?.address;
+          if (existing && sameAddress(existing, a.value)) {
+            return `L'adresse ${a.label} proposée est identique à l'adresse actuelle de la commande. Rien n'a été ` +
+              `proposé à l'utilisateur : demande-lui la nouvelle adresse ${a.label}.`;
+          }
+        }
+      }
+      return undefined;
+    },
     async run(siteId, input) {
       // `delivery_address` : ancien nom du paramètre, accepté pour l'adresse de livraison.
       const shipping = toOnestockAddress(input.shipping_address ?? input.delivery_address);
@@ -767,6 +804,18 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = Object.values(
 }));
 
 export const isWriteTool = (name: string) => TOOLS[name]?.write === true;
+
+/** Contrôle avant confirmation (voir ToolSpec.validate) ; une erreur de contrôle n'empêche pas la proposition. */
+export async function validateTool(siteId: string, name: string, input: unknown): Promise<string | undefined> {
+  const tool = TOOLS[name];
+  if (!tool?.validate) return undefined;
+  try {
+    return await tool.validate(siteId, (input ?? {}) as Input);
+  } catch (err) {
+    console.warn("[tools] validation failed", name, err);
+    return undefined;
+  }
+}
 
 /** Exécute un outil et renvoie un résultat sérialisé pour le modèle (les erreurs y sont décrites, pas levées). */
 export async function runTool(
