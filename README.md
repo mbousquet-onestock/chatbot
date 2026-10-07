@@ -50,7 +50,7 @@ Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)     
 | `search_items` | `GET /v3/items` (catalogue : motif, product_ids, caractéristiques) | lecture |
 | `cancel_order` | `PATCH /v2/line_item_groups` : toutes les lignes → `removed` (une transition par état actuel) | **écriture** |
 | `update_order_state` | `PATCH /v3/orders/{id}` (`order.from` → `order.to`) | **écriture** |
-| `update_order` | `PATCH /v3/orders/{id}` (client, adresse, informations) | **écriture** |
+| `update_order` | `PATCH /v3/orders/{id}` (client, adresse de livraison `delivery.destination.address`, adresse de facturation `pricing_details.address`, informations) | **écriture** |
 | `update_line_item_groups_state` | `PATCH /v2/line_item_groups` | **écriture** |
 
 Les GET OneStock prennent un corps JSON : ils sont envoyés en `POST` avec `X-HTTP-Method-Override: GET`, comme
@@ -73,7 +73,8 @@ ces lignes ne sont pas modifiées et une alerte l'indique : annulation impossibl
 permet plus l'annulation ») ou partielle (lignes annulées / lignes refusées, avec leur état).
 
 **Aucune écriture sans confirmation** : quand le modèle demande une action d'écriture, le serveur s'arrête et
-l'interface affiche une carte « Action à confirmer » avec les paramètres exacts. L'appel à OneStock n'est fait
+l'interface affiche une carte « Action à confirmer » : un récapitulatif rédigé pour un utilisateur métier
+(phrase explicative, client, adresses de livraison et de facturation présentées comme sur une fiche). L'appel à OneStock n'est fait
 qu'après clic sur **Confirmer** ; un refus est renvoyé au modèle, qui n'insiste pas.
 
 ### Anchors OneStock

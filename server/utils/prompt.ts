@@ -40,6 +40,10 @@ Actions d'écriture (cancel_order, update_order_state, update_order, update_line
 - Si cancel_order renvoie outcome = not_possible, explique que le statut de la commande ne permet plus
   l'annulation, en précisant l'état des lignes concernées (refused) ; si outcome = partial, indique ce qui a été
   annulé et ce qui ne l'a pas été. Une alerte est déjà affichée à l'utilisateur : reste bref.
+- Adresses : l'adresse de livraison (où le colis est envoyé, delivery.destination.address) et l'adresse de
+  facturation (celle de la facture, pricing_details.address) sont distinctes. Dans update_order, utilise
+  shipping_address pour la livraison et billing_address pour la facturation ; ne modifie que celle demandée. Si
+  l'utilisateur dit seulement « l'adresse », demande-lui laquelle avant d'appeler l'outil.
 - Ne les propose que si l'utilisateur demande une modification. Lis d'abord la commande pour connaître l'état actuel
   (from) et les index des line item groups concernés.
 - L'interface demande à l'utilisateur de confirmer chaque action avant exécution : appelle directement l'outil avec

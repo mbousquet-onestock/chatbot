@@ -130,6 +130,38 @@ function withDocumentLinks(data: unknown, siteId: string): unknown {
   return data;
 }
 
+const contactSchema = {
+  type: "object",
+  properties: {
+    title: { type: "string" }, first_name: { type: "string" }, last_name: { type: "string" },
+    email: { type: "string" }, phone_number: { type: "string" },
+  },
+} as const;
+
+const addressSchema = {
+  type: "object",
+  properties: {
+    lines: stringArray,
+    zip_code: { type: "string" },
+    city: { type: "string" },
+    country_code: { type: "string", description: "Code pays ISO 3166-1 alpha-2." },
+    contact: { ...contactSchema, description: "Personne à cette adresse." },
+  },
+  required: ["lines", "zip_code", "city", "country_code"],
+} as const;
+
+/** Adresse saisie (lines, zip_code, city, country_code, contact) → format d'adresse OneStock. */
+function toOnestockAddress(a: Input | undefined): Record<string, unknown> | undefined {
+  if (!a || typeof a !== "object") return undefined;
+  return compact({
+    lines: a.lines,
+    zip_code: a.zip_code,
+    city: a.city,
+    regions: a.country_code ? { country: { code: String(a.country_code).toUpperCase() } } : undefined,
+    contact: a.contact,
+  });
+}
+
 function requireString(input: Input, key: string): string {
   const v = input[key];
   if (typeof v !== "string" || !v.trim()) throw new Error(`"${key}" is required`);
@@ -551,36 +583,22 @@ export const TOOLS: Record<string, ToolSpec> = {
       name: "update_order",
       description:
         "ÉCRITURE — Met à jour des données d'une commande (PATCH /v3/orders/{id}) : coordonnées client, adresse de " +
-        "livraison, informations libres, signature au retrait. N'envoyer que les champs à modifier. " +
-        "L'utilisateur devra confirmer avant exécution.",
+        "livraison (shipping_address → delivery.destination.address, où le colis est envoyé), adresse de " +
+        "facturation (billing_address → pricing_details.address, celle de la facture), informations libres, " +
+        "signature au retrait. N'envoyer que ce qui doit changer : ne jamais recopier une adresse sur l'autre sans " +
+        "demande explicite. L'utilisateur devra confirmer avant exécution.",
       input_schema: {
         type: "object",
         properties: {
           order_id: { type: "string" },
-          customer: {
-            type: "object",
-            properties: {
-              title: { type: "string" }, first_name: { type: "string" }, last_name: { type: "string" },
-              email: { type: "string" }, phone_number: { type: "string" },
-            },
+          customer: { ...contactSchema, description: "Coordonnées du client de la commande." },
+          shipping_address: {
+            ...addressSchema,
+            description: "Adresse de LIVRAISON complète (delivery.destination.address), remplace l'existante.",
           },
-          delivery_address: {
-            type: "object",
-            description: "Adresse de livraison complète (remplace l'adresse existante).",
-            properties: {
-              lines: stringArray,
-              zip_code: { type: "string" },
-              city: { type: "string" },
-              country_code: { type: "string", description: "Code pays ISO 3166-1 alpha-2." },
-              contact: {
-                type: "object",
-                properties: {
-                  title: { type: "string" }, first_name: { type: "string" }, last_name: { type: "string" },
-                  email: { type: "string" }, phone_number: { type: "string" },
-                },
-              },
-            },
-            required: ["lines", "zip_code", "city", "country_code"],
+          billing_address: {
+            ...addressSchema,
+            description: "Adresse de FACTURATION complète (pricing_details.address), remplace l'existante.",
           },
           information: { type: "object", description: "Champs libres de order.information à fusionner." },
           sign_on_collect: { type: "boolean" },
@@ -589,24 +607,15 @@ export const TOOLS: Record<string, ToolSpec> = {
       },
     },
     run(siteId, input) {
-      const a = input.delivery_address;
+      // `delivery_address` : ancien nom du paramètre, accepté pour l'adresse de livraison.
+      const shipping = toOnestockAddress(input.shipping_address ?? input.delivery_address);
+      const billing = toOnestockAddress(input.billing_address);
       const order = compact({
         customer: input.customer && Object.keys(input.customer).length ? input.customer : undefined,
         information: input.information && Object.keys(input.information).length ? input.information : undefined,
         sign_on_collect: typeof input.sign_on_collect === "boolean" ? input.sign_on_collect : undefined,
-        delivery: a
-          ? {
-              destination: {
-                address: compact({
-                  lines: a.lines,
-                  zip_code: a.zip_code,
-                  city: a.city,
-                  regions: { country: { code: a.country_code } },
-                  contact: a.contact,
-                }),
-              },
-            }
-          : undefined,
+        delivery: shipping ? { destination: { address: shipping } } : undefined,
+        pricing_details: billing ? { address: billing } : undefined,
       });
       if (!Object.keys(order).length) throw new Error("Nothing to update");
       return onestockRequest(siteId, "PATCH", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, { order });
