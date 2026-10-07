@@ -66,6 +66,13 @@ et demande la transition `état actuel → removed` pour chaque état. Si OneSto
 ces lignes ne sont pas modifiées et une alerte l'indique : annulation impossible (« le statut de la commande ne
 permet plus l'annulation ») ou partielle (lignes annulées / lignes refusées, avec leur état).
 
+**Historique** : OneStock enregistre lui-même chaque écriture dans l'historique de la commande (`GET /history`) ;
+l'API ne permet pas d'y ajouter une entrée libre. Les modifications de commande (`PATCH /v3/orders/{id}`) sont
+envoyées avec le `user_id` du contexte OneStock pour être attribuées à l'utilisateur du chatbot. Si OneStock refuse
+cet utilisateur, la modification est refaite sans lui (attribuée à l'utilisateur technique du token) et le chatbot
+le signale. `PATCH /v2/line_item_groups` (annulation) n'accepte pas de `user_id` : ces changements d'état sont
+attribués à l'utilisateur technique.
+
 **Aucune écriture sans confirmation** : quand le modèle demande une action d'écriture, le serveur s'arrête et
 l'interface affiche une carte « Action à confirmer » avec les paramètres exacts. L'appel à OneStock n'est fait
 qu'après clic sur **Confirmer** ; un refus est renvoyé au modèle, qui n'insiste pas.
