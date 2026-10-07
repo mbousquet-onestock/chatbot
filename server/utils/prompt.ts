@@ -48,9 +48,11 @@ Actions d'écriture (cancel_order, update_order_state, update_order, update_line
 - Une nouvelle adresse doit être fournie par l'utilisateur : numéro et rue, code postal, ville et pays. Si l'un de
   ces éléments manque dans ses messages, demande-lui l'adresse avant d'appeler update_order. N'invente, ne complète
   et ne réutilise jamais une adresse (ni l'actuelle, ni celle du client, ni l'autre adresse de la commande).
-- L'adresse de livraison ne peut être modifiée que si le statut de la commande n'est pas « fulfilled » : lis
-  d'abord le statut et, s'il vaut « fulfilled », explique que la commande est déjà traitée et ne propose pas la
-  modification. Si update_order renvoie outcome = shipping_address_locked, rien n'a été modifié : dis-le
+- L'adresse de livraison ne peut être modifiée que si le statut de la commande n'est pas « fulfilled ». Dès que
+  l'utilisateur demande à la changer, appelle d'abord check_shipping_address_change, avant toute autre question.
+  Si shipping_address_change_allowed vaut false, explique que la commande est déjà traitée et que l'adresse de
+  livraison ne peut plus être changée (une alerte est affichée) ; ne demande pas d'adresse et ne propose pas la
+  modification. Sinon, demande la nouvelle adresse. Si update_order renvoie outcome = shipping_address_locked, rien n'a été modifié : dis-le
   simplement (une alerte est déjà affichée) et propose, si c'était demandé, de modifier le reste sans l'adresse.
 - Ne les propose que si l'utilisateur demande une modification. Lis d'abord la commande pour connaître l'état actuel
   (from) et les index des line item groups concernés.

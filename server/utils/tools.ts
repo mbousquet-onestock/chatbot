@@ -26,6 +26,14 @@ export interface ToolNotice {
 /** Statuts de commande pour lesquels l'adresse de livraison ne peut plus être modifiée. */
 const SHIPPING_ADDRESS_LOCKED_STATES = ["fulfilled"];
 
+/** Statut actuel d'une commande (relu chez OneStock). */
+async function readOrderState(siteId: string, orderId: string): Promise<OnestockResult & { state?: string }> {
+  const res = await onestockRequest(siteId, "GET", `/v3/orders/${encodeId(orderId)}`, { fields: ["id", "state"] });
+  if (!res.ok) return res;
+  const order = ((res.data as { order?: unknown })?.order ?? res.data) as { state?: unknown } | undefined;
+  return { ...res, state: String(order?.state ?? "") };
+}
+
 export interface ToolSpec {
   definition: ToolDefinition;
   /** Une action d'écriture n'est exécutée qu'après confirmation explicite de l'utilisateur. */
@@ -605,6 +613,31 @@ export const TOOLS: Record<string, ToolSpec> = {
       }),
   },
 
+  check_shipping_address_change: {
+    write: false,
+    definition: {
+      name: "check_shipping_address_change",
+      description:
+        "Vérifie si l'adresse de livraison d'une commande peut encore être modifiée (impossible si le statut de la " +
+        "commande est « fulfilled »). À appeler EN PREMIER dès que l'utilisateur demande à changer l'adresse de " +
+        "livraison, avant de lui demander la nouvelle adresse.",
+      input_schema: { type: "object", properties: { order_id: { type: "string" } }, required: ["order_id"] },
+    },
+    async run(siteId, input) {
+      const orderId = requireString(input, "order_id");
+      const current = await readOrderState(siteId, orderId);
+      if (!current.ok) return current;
+      const state = current.state ?? "";
+      const allowed = !SHIPPING_ADDRESS_LOCKED_STATES.includes(state);
+      return {
+        ok: true,
+        status: 200,
+        data: { order_id: orderId, order_state: state, shipping_address_change_allowed: allowed },
+        notice: allowed ? undefined : { code: "shipping_address_locked", order_id: orderId, order_state: state },
+      };
+    },
+  },
+
   update_order: {
     write: true,
     definition: {
@@ -640,6 +673,15 @@ export const TOOLS: Record<string, ToolSpec> = {
         { key: "billing_address", label: "de facturation", value: input.billing_address, current: "billing" },
       ].filter((a) => a.value !== undefined && a.value !== null);
       if (!addresses.length) return undefined;
+
+      // 0. Adresse de livraison : seulement si la commande n'est pas « fulfilled ».
+      if (addresses.some((a) => a.current === "delivery")) {
+        const current = await readOrderState(siteId, requireString(input, "order_id"));
+        if (current.ok && SHIPPING_ADDRESS_LOCKED_STATES.includes(current.state ?? "")) {
+          return `La commande est au statut « ${current.state} » : son adresse de livraison ne peut plus être modifiée. ` +
+            "Rien n'a été proposé à l'utilisateur : explique-le-lui, sans demander d'adresse.";
+        }
+      }
 
       // 1. Adresse complète : rue, code postal, ville et pays, tous fournis par l'utilisateur.
       for (const a of addresses) {
@@ -682,9 +724,9 @@ export const TOOLS: Record<string, ToolSpec> = {
       // L'adresse de livraison n'est modifiable que si la commande n'est pas « fulfilled » : statut relu juste
       // avant l'écriture, et rien n'est envoyé si la règle n'est pas respectée.
       if (shipping) {
-        const current = await onestockRequest(siteId, "GET", `/v3/orders/${encodeId(orderId)}`, { fields: ["id", "state"] });
+        const current = await readOrderState(siteId, orderId);
         if (!current.ok) return current;
-        const state = String(((current.data as { order?: { state?: unknown } })?.order ?? current.data as { state?: unknown })?.state ?? "");
+        const state = current.state ?? "";
         if (SHIPPING_ADDRESS_LOCKED_STATES.includes(state)) {
           return {
             ok: true,

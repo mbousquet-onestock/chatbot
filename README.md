@@ -50,6 +50,7 @@ Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)     
 | `search_items` | `GET /v3/items` (catalogue : motif, product_ids, caractéristiques) | lecture |
 | `cancel_order` | `PATCH /v2/line_item_groups` : toutes les lignes → `removed` (une transition par état actuel) | **écriture** |
 | `update_order_state` | `PATCH /v3/orders/{id}` (`order.from` → `order.to`) | **écriture** |
+| `check_shipping_address_change` | `GET /v3/orders/{id}` (statut) : adresse de livraison modifiable ou non | lecture |
 | `update_order` | `PATCH /v3/orders/{id}` (client, adresse de livraison `delivery.destination.address`, adresse de facturation `pricing_details.address`, informations) | **écriture** |
 | `update_line_item_groups_state` | `PATCH /v2/line_item_groups` | **écriture** |
 
@@ -76,8 +77,10 @@ permet plus l'annulation ») ou partielle (lignes annulées / lignes refusées, 
 serveur vérifie que l'adresse proposée est complète (rue, code postal, ville, pays) et différente de l'adresse
 actuelle ; sinon aucune carte n'est affichée et l'assistant demande l'adresse à l'utilisateur.
 
-**Adresse de livraison** : elle n'est modifiable que si la commande n'est pas au statut `fulfilled`. `update_order`
-relit le statut juste avant l'écriture ; s'il vaut `fulfilled`, rien n'est envoyé à OneStock et une alerte
+**Adresse de livraison** : elle n'est modifiable que si la commande n'est pas au statut `fulfilled`. Dès la
+demande de l'utilisateur, l'assistant appelle `check_shipping_address_change` (alerte immédiate et pas de
+demande d'adresse si c'est impossible) ; le statut est revérifié avant la carte de confirmation, et `update_order`
+le relit juste avant l'écriture ; s'il vaut `fulfilled`, rien n'est envoyé à OneStock et une alerte
 l'indique (statuts bloquants : `SHIPPING_ADDRESS_LOCKED_STATES` dans `server/utils/tools.ts`).
 
 **Fiches articles** : `get_order` renvoie le nom, la description et l'image de chaque article
