@@ -59,6 +59,7 @@ le prévoit la documentation de l'API. `site_id` et `token` sont ajoutés par le
 **Documents des colis** : `get_order_parcels` ajoute à chaque colis des liens `document_links` vers
 `/api/documents/{id}?site_id=…`. Cette route lit `GET /v3/documents/{id}` et renvoie le fichier, ou à défaut
 l'aperçu en image contenu dans la réponse, pour l'ouvrir dans un onglet.
+La facture d'une commande est l'URL stockée dans `information.invoice` de la commande : l'assistant l'affiche en lien.
 
 **Annulation d'une commande** : `cancel_order` lit les lignes de la commande, ignore celles déjà à `removed`
 et demande la transition `état actuel → removed` pour chaque état. Si OneStock refuse une transition (erreur 4xx),

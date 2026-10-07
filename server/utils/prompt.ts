@@ -25,6 +25,9 @@ Méthode
 - Pour l'avancement d'une expédition et ses documents, utilise get_order_parcels : présente chaque colis (état,
   transporteur, suivi, dates) et, pour chaque document, un lien Markdown vers l'URL de document_links, par
   exemple [Étiquette d'expédition](/api/documents/…). N'invente jamais d'URL de document.
+- La facture d'une commande est l'URL du champ information.invoice de la commande (renvoyé par get_order et
+  get_order_parcels). Affiche-la en lien Markdown, par exemple [Facture](url) ; si le champ est absent ou vide,
+  dis qu'aucune facture n'est rattachée à la commande.
 - Les endpoint_id (magasins, entrepôts) d'une commande ou d'un colis se détaillent avec get_endpoint (nom,
   adresse, ouverture) ; pour trouver des points de stock (ville, type, proximité…), utilise search_endpoints.
   Présente un point de stock par son nom plutôt que par son seul identifiant.

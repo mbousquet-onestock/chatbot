@@ -286,14 +286,15 @@ export const TOOLS: Record<string, ToolSpec> = {
       description:
         "Colis d'une commande et leur avancement (GET /v3/orders/{id}, champs parcels.*) : état, dates de création " +
         "et de mise à jour, articles (index), origine, destination, transporteur, numéro et lien de suivi, et " +
-        "documents liés (étiquette d'expédition, bon de retour…). Chaque document est fourni avec un lien " +
+        "documents liés (étiquette d'expédition, bon de retour…), ainsi que information de la commande (facture dans " +
+        "information.invoice). Chaque document est fourni avec un lien " +
         "`document_links` à afficher tel quel en Markdown pour l'ouvrir.",
       input_schema: { type: "object", properties: { order_id: { type: "string" } }, required: ["order_id"] },
     },
     async run(siteId, input) {
       const res = await onestockRequest(siteId, "GET", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, {
         fields: [
-          "id", "state", "parcels.id", "parcels.state", "parcels.line_item_index_ranges", "parcels.information",
+          "id", "state", "information", "parcels.id", "parcels.state", "parcels.line_item_index_ranges", "parcels.information",
           "parcels.delivery.destination.address", "parcels.delivery.destination.endpoint_id", "parcels.delivery.origin",
           "parcels.delivery.carrier", "parcels.delivery.type", "parcels.shipment.tracking_code",
           "parcels.shipment.tracking_link", "parcels.date", "parcels.last_update", "parcels.documents",
