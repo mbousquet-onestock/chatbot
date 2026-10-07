@@ -18,6 +18,8 @@ interface SettingsReport {
   environment: ConfigEntry[];
   settings: ConfigEntry[];
   checks: Check[];
+  /** Toutes les lignes onestock_token / onestock_api_root de la table, sans valeur. */
+  rows?: { key: string; site_id: string; environment: string; encrypted: boolean; empty: boolean; status: string }[];
 }
 
 const props = defineProps<{ lang?: string }>();
@@ -74,7 +76,9 @@ const warn = (e: ConfigEntry) =>
   (e.name === "ALLOWED_SITE_IDS" && (!e.set || e.note?.endsWith("not-current"))) ||
   (e.name === "onestock_token" && e.note?.startsWith("plain"));
 
-const checkDetail = (c: Check) => t.value.errors[c.detail] ?? (c.detail === "env-fallback" ? t.value.envFallback : c.detail);
+const checkDetail = (c: Check) =>
+  t.value.errors[c.detail] ?? (c.detail === "env-fallback" ? t.value.envFallback : c.name === "decrypt" && c.detail === "ok" ? "" : c.detail);
+const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_environment: "orange" } as const;
 </script>
 
 <template>
@@ -108,6 +112,23 @@ const checkDetail = (c: Check) => t.value.errors[c.detail] ?? (c.detail === "env
             <OsIcon :icon="c.ok ? 'check-circle-outline' : 'error-outline'" size="s" :color="c.ok ? 'green' : 'red'" />
             <span class="os-body-l name">{{ t.checkNames[c.name] ?? c.name }}</span>
             <span class="os-body-s os-text-secondary detail">{{ checkDetail(c) }}</span>
+          </div>
+        </OsCardLayout>
+      </section>
+
+      <section v-if="report.rows">
+        <h2 class="os-label-l">{{ t.tableRows }}</h2>
+        <OsCardLayout class="rows">
+          <div v-if="!report.rows.length" class="row os-body-s os-text-secondary">{{ t.noRows }}</div>
+          <div v-for="(r, i) in report.rows" :key="i" class="row entry">
+            <div class="label">
+              <code>{{ r.key }}</code>
+              <span class="os-body-s os-text-secondary">site_id : {{ r.site_id || "(vide)" }} · environment : {{ r.environment || "(vide)" }}</span>
+            </div>
+            <div class="value os-body-s os-text-secondary">
+              {{ r.empty ? t.emptyValue : r.encrypted ? t.encrypted : t.plain }}
+            </div>
+            <OsBadge type="secondary" :color="rowColor[r.status as keyof typeof rowColor] ?? 'grey'" :text="t.rowStatus[r.status] ?? r.status" />
           </div>
         </OsCardLayout>
       </section>

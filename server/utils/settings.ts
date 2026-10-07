@@ -70,6 +70,53 @@ export async function readSettingsRows(siteId: string): Promise<{ rows: SettingR
   };
 }
 
+/** Ligne de `settings` vue par le diagnostic (sans sa valeur). */
+export interface SettingDiagnosticRow {
+  key: string;
+  site_id: string;
+  environment: string;
+  encrypted: boolean;
+  empty: boolean;
+  /** Pourquoi la ligne est (ou n'est pas) utilisée pour ce site. */
+  status: "used" | "other_site" | "other_environment" | "shadowed";
+}
+
+/**
+ * Toutes les lignes `onestock_token` / `onestock_api_root` de la table, sans leur valeur, avec la raison pour
+ * laquelle chacune est retenue ou ignorée pour ce site, et le résultat du déchiffrement du token retenu.
+ */
+export async function diagnoseSettings(siteId: string): Promise<{ rows: SettingDiagnosticRow[]; decrypt: string }> {
+  const environment = process.env.ONESTOCK_ENVIRONMENT?.trim() || null;
+  const all = (await sql()`
+    SELECT key, site_id, environment, value FROM settings
+    WHERE key = ANY(${KEYS as unknown as string[]})
+    ORDER BY key, site_id, environment`) as { key: string; site_id: string | null; environment: string | null; value: string | null }[];
+  const { rows: used } = await readSettingsRows(siteId);
+
+  const rows = all.map((r): SettingDiagnosticRow => {
+    const site = r.site_id ?? "";
+    const env = r.environment ?? "";
+    const chosen = used.find((u) => u.key === r.key);
+    const status = site !== siteId && site !== "*" && site !== ""
+      ? "other_site"
+      : environment && env !== environment
+        ? "other_environment"
+        : chosen && chosen.site_id === site && chosen.value === r.value ? "used" : "shadowed";
+    return { key: r.key, site_id: site, environment: env, encrypted: !!r.value?.startsWith("enc:v1:"), empty: !r.value, status };
+  });
+
+  const token = used.find((u) => u.key === "onestock_token")?.value;
+  let decrypt = "no_token";
+  if (token) {
+    try {
+      decrypt = decryptSetting(token) ? "ok" : "empty";
+    } catch (err) {
+      decrypt = `error: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+  return { rows, decrypt };
+}
+
 /** Configuration OneStock déchiffrée d'un site, gardée 5 min en cache mémoire. */
 export async function getOnestockSettings(siteId: string): Promise<OnestockSettings> {
   const cacheKey = `${process.env.ONESTOCK_ENVIRONMENT?.trim() ?? ""}|${siteId}`;
@@ -81,10 +128,25 @@ export async function getOnestockSettings(siteId: string): Promise<OnestockSetti
   const apiRoot = rows.find((r) => r.key === "onestock_api_root")?.value;
   if (!token || !apiRoot) {
     const missing = [!token && "onestock_token", !apiRoot && "onestock_api_root"].filter(Boolean).join(", ");
-    throw createError({ statusCode: 500, statusMessage: `Missing settings for site ${siteId}: ${missing}` });
+    const env = process.env.ONESTOCK_ENVIRONMENT?.trim();
+    console.error("[settings] missing", { siteId, environment: env ?? null, missing });
+    throw createError({
+      statusCode: 500,
+      statusMessage: `Missing settings for site ${siteId}${env ? ` and environment ${env}` : ""}: ${missing}`,
+    });
   }
 
-  const value = { token: decryptSetting(token), apiRoot: normalizeApiRoot(apiRoot) };
+  let decrypted: string;
+  try {
+    decrypted = decryptSetting(token);
+  } catch (err) {
+    console.error("[settings] onestock_token decryption failed", err);
+    throw createError({
+      statusCode: 500,
+      statusMessage: "Cannot decrypt onestock_token: check SETTINGS_ENCRYPTION_KEY (same value as the Extensions application)",
+    });
+  }
+  const value = { token: decrypted, apiRoot: normalizeApiRoot(apiRoot) };
   cache.set(cacheKey, { at: Date.now(), value });
   return value;
 }

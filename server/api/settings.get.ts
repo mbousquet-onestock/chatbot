@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { requireSession } from "../utils/session";
-import { databaseUrl, readSettingsRows } from "../utils/settings";
+import { databaseUrl, diagnoseSettings, readSettingsRows, type SettingDiagnosticRow } from "../utils/settings";
 import { onestockRequest } from "../utils/onestock";
 
 /** Une ligne de l'onglet Paramètres. Les secrets ne sont jamais renvoyés : seulement leur présence. */
@@ -110,6 +110,18 @@ export default defineEventHandler(async (event) => {
     checks.push({ name: "database", ok: false, detail: db.error ?? "" });
   }
 
+  // Toutes les lignes de la table pour ces clés (sans valeur) et test du déchiffrement du token.
+  let rows: SettingDiagnosticRow[] = [];
+  if (db.result && !db.result.fromEnv) {
+    const diag = await timed(() => diagnoseSettings(session.siteId));
+    if (diag.result) {
+      rows = diag.result.rows;
+      checks.push({ name: "decrypt", ok: diag.result.decrypt === "ok", detail: diag.result.decrypt });
+    } else {
+      checks.push({ name: "decrypt", ok: false, detail: diag.error ?? "" });
+    }
+  }
+
   // API OneStock : une recherche d'une seule commande valide l'URL et le token.
   if (settings.every((s) => s.set) && db.result) {
     const os = await timed(() =>
@@ -144,5 +156,6 @@ export default defineEventHandler(async (event) => {
     environment,
     settings,
     checks,
+    rows,
   };
 });
