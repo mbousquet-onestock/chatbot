@@ -18,6 +18,9 @@ const fr = {
     nothingText: "Toutes les lignes sont déjà à l'état « removed » : rien à modifier.",
     errorTitle: (id: string) => `Erreur lors de l'annulation de la commande ${id}`,
     errorText: "OneStock n'a pas pu traiter la demande. Réessayez plus tard.",
+    addressLockedTitle: (id: string) => `Adresse de livraison non modifiable pour la commande ${id}`,
+    addressLockedText: (state: string) =>
+      `La commande est au statut « ${state} » : son adresse de livraison ne peut plus être changée. Aucune modification n'a été faite.`,
   },
   tabChat: "Assistant",
   tabSettings: "Paramètres",
@@ -157,6 +160,9 @@ const en: Dict = {
     nothingText: "All lines are already in the “removed” state: nothing to change.",
     errorTitle: (id: string) => `Error while cancelling order ${id}`,
     errorText: "OneStock could not process the request. Try again later.",
+    addressLockedTitle: (id: string) => `Shipping address of order ${id} cannot be changed`,
+    addressLockedText: (state: string) =>
+      `The order is in status “${state}”: its shipping address can no longer be changed. Nothing was modified.`,
   },
   tabChat: "Assistant",
   tabSettings: "Settings",

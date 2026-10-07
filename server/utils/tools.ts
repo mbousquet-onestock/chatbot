@@ -13,12 +13,17 @@ interface ToolDefinition {
 
 /** Message à afficher à l'utilisateur (alerte dans la conversation), traduit côté front à partir de son code. */
 export interface ToolNotice {
-  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error";
+  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error" | "shipping_address_locked";
   order_id: string;
   /** États des lignes annulées et des lignes dont la transition a été refusée. */
   cancelled_states?: string[];
   refused_states?: string[];
+  /** Statut de la commande qui bloque l'action. */
+  order_state?: string;
 }
+
+/** Statuts de commande pour lesquels l'adresse de livraison ne peut plus être modifiée. */
+const SHIPPING_ADDRESS_LOCKED_STATES = ["fulfilled"];
 
 export interface ToolSpec {
   definition: ToolDefinition;
@@ -30,7 +35,15 @@ export interface ToolSpec {
 /** Contexte de l'appel : utilisateur OneStock à l'origine de la demande (vide s'il n'est pas connu). */
 export interface ToolContext {
   userId: string;
+  /** Langue de l'utilisateur (ex. fr), pour les caractéristiques des articles. */
+  lang?: string;
 }
+
+/** Caractéristiques des articles incluses dans la lecture d'une commande. */
+const ORDER_ITEM_FEATURES = ["name", "description", "image_url"];
+
+/** Code langue court pour item_features_lang (fr-FR → fr ; français par défaut). */
+const featuresLang = (lang?: string) => (lang?.trim().toLowerCase().split(/[-_]/)[0] || "fr");
 
 /** État cible des lignes d'une commande annulée. */
 export const CANCELLED_STATE = "removed";
@@ -237,8 +250,9 @@ export const TOOLS: Record<string, ToolSpec> = {
     definition: {
       name: "get_order",
       description:
-        "Détail complet d'une commande (GET /v3/orders/{id}) : état, client, livraison, prix, articles (order_items), " +
-        "line item groups (état de préparation par article, avec leurs index), colis et suivi transporteur.",
+        "Détail complet d'une commande (GET /v3/orders/{id}) : état, client, livraison, prix, articles (order_items, " +
+        "avec nom, description et image dans order_items.item.features), line item groups (état de préparation par " +
+        "article, avec leurs index), colis et suivi transporteur.",
       input_schema: {
         type: "object",
         properties: {
@@ -250,9 +264,17 @@ export const TOOLS: Record<string, ToolSpec> = {
     },
     async run(siteId, input, ctx) {
       const orderId = requireString(input, "order_id");
-      const res = await onestockRequest(siteId, "GET", `/v3/orders/${encodeId(orderId)}`, {
-        fields: input.fields?.length ? input.fields : DEFAULT_ORDER_FIELDS,
-      });
+      const path = `/v3/orders/${encodeId(orderId)}`;
+      const fields = input.fields?.length ? input.fields : DEFAULT_ORDER_FIELDS;
+      // Vue par défaut : avec les fiches articles (nom, description, image) dans la langue de l'utilisateur.
+      let res = input.fields?.length
+        ? await onestockRequest(siteId, "GET", path, { fields })
+        : await onestockRequest(siteId, "GET", path, {
+            fields: [...fields, ...ORDER_ITEM_FEATURES.map((f) => `order_items.item.features.${f}`)],
+            item_features_lang: featuresLang(ctx.lang),
+          });
+      // Si OneStock refuse les caractéristiques (langue ou nom inconnu), la commande est relue sans elles.
+      if (!res.ok && res.status < 500 && !input.fields?.length) res = await onestockRequest(siteId, "GET", path, { fields });
       return res.ok ? { ...res, data: withInvoiceLink(res.data, orderId, siteId, ctx.userId) } : res;
     },
   },
@@ -606,7 +628,7 @@ export const TOOLS: Record<string, ToolSpec> = {
         required: ["order_id"],
       },
     },
-    run(siteId, input) {
+    async run(siteId, input) {
       // `delivery_address` : ancien nom du paramètre, accepté pour l'adresse de livraison.
       const shipping = toOnestockAddress(input.shipping_address ?? input.delivery_address);
       const billing = toOnestockAddress(input.billing_address);
@@ -618,7 +640,24 @@ export const TOOLS: Record<string, ToolSpec> = {
         pricing_details: billing ? { address: billing } : undefined,
       });
       if (!Object.keys(order).length) throw new Error("Nothing to update");
-      return onestockRequest(siteId, "PATCH", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, { order });
+      const orderId = requireString(input, "order_id");
+
+      // L'adresse de livraison n'est modifiable que si la commande n'est pas « fulfilled » : statut relu juste
+      // avant l'écriture, et rien n'est envoyé si la règle n'est pas respectée.
+      if (shipping) {
+        const current = await onestockRequest(siteId, "GET", `/v3/orders/${encodeId(orderId)}`, { fields: ["id", "state"] });
+        if (!current.ok) return current;
+        const state = String(((current.data as { order?: { state?: unknown } })?.order ?? current.data as { state?: unknown })?.state ?? "");
+        if (SHIPPING_ADDRESS_LOCKED_STATES.includes(state)) {
+          return {
+            ok: true,
+            status: 200,
+            data: { order_id: orderId, outcome: "shipping_address_locked", order_state: state, updated: false },
+            notice: { code: "shipping_address_locked", order_id: orderId, order_state: state },
+          };
+        }
+      }
+      return onestockRequest(siteId, "PATCH", `/v3/orders/${encodeId(orderId)}`, { order });
     },
   },
 

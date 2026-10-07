@@ -72,6 +72,14 @@ et demande la transition `état actuel → removed` pour chaque état. Si OneSto
 ces lignes ne sont pas modifiées et une alerte l'indique : annulation impossible (« le statut de la commande ne
 permet plus l'annulation ») ou partielle (lignes annulées / lignes refusées, avec leur état).
 
+**Adresse de livraison** : elle n'est modifiable que si la commande n'est pas au statut `fulfilled`. `update_order`
+relit le statut juste avant l'écriture ; s'il vaut `fulfilled`, rien n'est envoyé à OneStock et une alerte
+l'indique (statuts bloquants : `SHIPPING_ADDRESS_LOCKED_STATES` dans `server/utils/tools.ts`).
+
+**Fiches articles** : `get_order` renvoie le nom, la description et l'image de chaque article
+(`order_items.item.features.*`, dans la langue de l'utilisateur) ; si OneStock refuse ces caractéristiques, la
+commande est relue sans elles.
+
 **Aucune écriture sans confirmation** : quand le modèle demande une action d'écriture, le serveur s'arrête et
 l'interface affiche une carte « Action à confirmer » : un récapitulatif rédigé pour un utilisateur métier
 (phrase explicative, client, adresses de livraison et de facturation présentées comme sur une fiche). L'appel à OneStock n'est fait

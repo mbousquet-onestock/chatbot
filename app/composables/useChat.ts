@@ -16,10 +16,11 @@ export interface PendingAction {
 
 /** Alerte produite par un outil (ex. résultat d'une annulation), voir ToolNotice côté serveur. */
 export interface ChatNotice {
-  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error";
+  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error" | "shipping_address_locked";
   order_id: string;
   cancelled_states?: string[];
   refused_states?: string[];
+  order_state?: string;
 }
 
 export interface ChatItem {

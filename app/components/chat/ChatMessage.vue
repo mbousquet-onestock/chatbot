@@ -30,6 +30,8 @@ function noticeAlert(n: ChatNotice) {
       };
     case "cancel_not_possible":
       return { type: "danger" as const, title: c.notPossibleTitle(n.order_id), subtitle: c.notPossibleText(states(n.refused_states)) };
+    case "shipping_address_locked":
+      return { type: "danger" as const, title: c.addressLockedTitle(n.order_id), subtitle: c.addressLockedText(n.order_state ?? "") };
     case "cancel_nothing":
       return { type: "info" as const, title: c.nothingTitle(n.order_id), subtitle: c.nothingText };
     default:
