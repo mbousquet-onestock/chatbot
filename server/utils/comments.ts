@@ -4,14 +4,14 @@ import { encodeId, onestockRequest } from "./onestock";
 const PREFIX = "Assistant commandes";
 
 /**
- * Ajoute un commentaire à une commande (POST /v2/orders/{id}/comments, `{ comment }`, même format que la
- * lecture des commentaires). Ne lève jamais : un échec est journalisé et renvoyé à false, pour ne pas bloquer
+ * Ajoute un commentaire à une commande (POST /v2/orders/{id}/comments, `{ order_comment: { comment } }`,
+ * réponse 204). Ne lève jamais : un échec est journalisé et renvoyé à false, pour ne pas bloquer
  * l'action de l'utilisateur.
  */
 export async function addOrderComment(siteId: string, orderId: string, text: string): Promise<boolean> {
   try {
     const res = await onestockRequest(siteId, "POST", `/v2/orders/${encodeId(orderId)}/comments`, {
-      comment: `${PREFIX} : ${text}`,
+      order_comment: { comment: `${PREFIX} : ${text}` },
     });
     if (!res.ok) console.warn("[comments] OneStock refused the comment", { orderId, status: res.status, response: res.data });
     return res.ok;

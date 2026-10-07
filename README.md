@@ -62,10 +62,10 @@ l'aperçu en image contenu dans la réponse, pour l'ouvrir dans un onglet.
 La facture d'une commande est l'URL stockée dans `information.invoice` de la commande. L'assistant l'affiche via
 `/api/invoices/{commande}?site_id=…`, qui ajoute un commentaire à la commande puis redirige vers le PDF.
 
-**Commentaires de commande** : l'extension ajoute un commentaire (`POST /v2/orders/{id}/comments`, `{ "comment": … }`,
-préfixé « Assistant commandes : ») quand le chat est ouvert sur une commande (anchor `bo.order.action`) et quand
-une facture est consultée. Cette route d'écriture n'est pas décrite dans la spec OpenAPI fournie (seule la lecture
-l'est) : en cas de refus de OneStock, l'action continue et l'échec est journalisé (`[comments]`).
+**Commentaires de commande** : l'extension ajoute un commentaire (`POST /v2/orders/{id}/comments`,
+`{ "order_comment": { "comment": … } }`, préfixé « Assistant commandes : ») quand le chat est ouvert sur une commande (anchor `bo.order.action`) et quand
+une facture est consultée. Cette route est marquée « internal » dans la spec OneStock : en cas de refus,
+l'action de l'utilisateur continue et l'échec est journalisé (`[comments]`).
 
 **Annulation d'une commande** : `cancel_order` lit les lignes de la commande, ignore celles déjà à `removed`
 et demande la transition `état actuel → removed` pour chaque état. Si OneStock refuse une transition (erreur 4xx),
