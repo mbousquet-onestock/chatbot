@@ -57,8 +57,17 @@ export interface ToolContext {
 /** Caractéristiques des articles incluses dans la lecture d'une commande. */
 const ORDER_ITEM_FEATURES = ["name", "description", "image_url"];
 
-/** Code langue court pour item_features_lang (fr-FR → fr ; français par défaut). */
-const featuresLang = (lang?: string) => (lang?.trim().toLowerCase().split(/[-_]/)[0] || "fr");
+/** Code langue court (fr-FR → fr), ou undefined. */
+const shortLang = (lang?: string) => lang?.trim().toLowerCase().split(/[-_]/)[0] || undefined;
+
+/**
+ * Langues à essayer pour les caractéristiques des articles, dans l'ordre : langue demandée ou de l'utilisateur,
+ * puis `default_lang` de la table settings, puis français.
+ */
+async function featureLangs(siteId: string, ...preferred: (string | undefined)[]): Promise<string[]> {
+  const siteDefault = await getOnestockSettings(siteId).then((s) => s.defaultLang, () => undefined);
+  return [...new Set([...preferred, siteDefault, "fr"].map(shortLang).filter((l): l is string => !!l))];
+}
 
 /** État cible des lignes d'une commande annulée. */
 export const CANCELLED_STATE = "removed";
@@ -281,15 +290,19 @@ export const TOOLS: Record<string, ToolSpec> = {
       const orderId = requireString(input, "order_id");
       const path = `/v3/orders/${encodeId(orderId)}`;
       const fields = input.fields?.length ? input.fields : DEFAULT_ORDER_FIELDS;
-      // Vue par défaut : avec les fiches articles (nom, description, image) dans la langue de l'utilisateur.
-      let res = input.fields?.length
-        ? await onestockRequest(siteId, "GET", path, { fields })
-        : await onestockRequest(siteId, "GET", path, {
-            fields: [...fields, ...ORDER_ITEM_FEATURES.map((f) => `order_items.item.features.${f}`)],
-            item_features_lang: featuresLang(ctx.lang),
-          });
-      // Si OneStock refuse les caractéristiques (langue ou nom inconnu), la commande est relue sans elles.
-      if (!res.ok && res.status < 500 && !input.fields?.length) res = await onestockRequest(siteId, "GET", path, { fields });
+      if (input.fields?.length) {
+        const res = await onestockRequest(siteId, "GET", path, { fields });
+        return res.ok ? { ...res, data: withInvoiceLink(res.data, orderId, siteId, ctx.userId) } : res;
+      }
+      // Vue par défaut : avec les fiches articles (nom, description, image), dans la langue de l'utilisateur, puis
+      // celle du site (default_lang) si OneStock la refuse, et enfin sans les fiches.
+      const withFeatures = [...fields, ...ORDER_ITEM_FEATURES.map((f) => `order_items.item.features.${f}`)];
+      let res: OnestockResult | undefined;
+      for (const lang of await featureLangs(siteId, ctx.lang)) {
+        res = await onestockRequest(siteId, "GET", path, { fields: withFeatures, item_features_lang: lang });
+        if (res.ok || res.status >= 500) break;
+      }
+      if (!res || (!res.ok && res.status < 500)) res = await onestockRequest(siteId, "GET", path, { fields });
       return res.ok ? { ...res, data: withInvoiceLink(res.data, orderId, siteId, ctx.userId) } : res;
     },
   },
@@ -413,23 +426,31 @@ export const TOOLS: Record<string, ToolSpec> = {
         type: "object",
         properties: {
           order_id: { type: "string" },
-          lang: { type: "string", description: "Langue des caractéristiques (ex. fr, en). Défaut : langue de l'utilisateur." },
+          lang: {
+            type: "string",
+            description: "Langue des caractéristiques (ex. fr, en). Défaut : langue de l'utilisateur, puis default_lang du site.",
+          },
           features: { ...stringArray, description: `Caractéristiques à lire. Défaut : ${DEFAULT_ITEM_FEATURES.join(", ")}.` },
         },
-        required: ["order_id", "lang"],
+        required: ["order_id"],
       },
     },
-    run: (siteId, input) =>
-      onestockRequest(siteId, "GET", `/v3/orders/${encodeId(requireString(input, "order_id"))}`, {
-        fields: [
-          "id",
-          "order_items._id",
-          "order_items.item_id",
-          "order_items.quantity",
-          ...featureNames(input).map((f) => `order_items.item.features.${f}`),
-        ],
-        item_features_lang: requireString(input, "lang"),
-      }),
+    async run(siteId, input, ctx) {
+      const path = `/v3/orders/${encodeId(requireString(input, "order_id"))}`;
+      const fields = [
+        "id",
+        "order_items._id",
+        "order_items.item_id",
+        "order_items.quantity",
+        ...featureNames(input).map((f) => `order_items.item.features.${f}`),
+      ];
+      let res: OnestockResult | undefined;
+      for (const lang of await featureLangs(siteId, input.lang, ctx.lang)) {
+        res = await onestockRequest(siteId, "GET", path, { fields, item_features_lang: lang });
+        if (res.ok || res.status >= 500) break;
+      }
+      return res!;
+    },
   },
 
   get_item: {
@@ -523,10 +544,14 @@ export const TOOLS: Record<string, ToolSpec> = {
         },
       },
     },
-    run(siteId, input) {
+    async run(siteId, input) {
       const pattern = typeof input.pattern === "string" ? input.pattern.trim() : "";
       const searchable: string[] = input.searchable_fields?.length ? input.searchable_fields.map(String) : ["name"];
-      const lang = typeof input.lang === "string" && input.lang.trim() ? input.lang.trim() : undefined;
+      const askedFeatures = Array.isArray(input.features) && input.features.length > 0;
+      // Caractéristiques demandées sans langue : langue par défaut du site (default_lang), sinon français.
+      const lang = typeof input.lang === "string" && input.lang.trim()
+        ? input.lang.trim()
+        : askedFeatures ? (await featureLangs(siteId))[0] : undefined;
       const filters = input.feature_filters && typeof input.feature_filters === "object"
         ? Object.entries(input.feature_filters as Record<string, unknown>).map(([name, values]) => [
             name,

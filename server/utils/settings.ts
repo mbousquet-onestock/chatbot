@@ -7,9 +7,11 @@ export interface OnestockSettings {
   apiRoot: string;
   /** Vue (requête) de stock OneStock utilisée par GET /stock_export (défaut : DEFAULT_STOCK_REQUEST_NAME). */
   stockRequestName: string;
+  /** Langue par défaut du site (clé `default_lang`), pour les caractéristiques des articles ; facultative. */
+  defaultLang?: string;
 }
 
-const KEYS = ["onestock_token", "onestock_api_root", "onestock_stock_request_name"] as const;
+const KEYS = ["onestock_token", "onestock_api_root", "onestock_stock_request_name", "default_lang"] as const;
 
 /** Vue de stock utilisée quand `onestock_stock_request_name` n'est pas renseignée dans la table settings. */
 export const DEFAULT_STOCK_REQUEST_NAME = "detailed";
@@ -158,7 +160,8 @@ export async function getOnestockSettings(siteId: string): Promise<OnestockSetti
   }
   const stockRequestName =
     rows.find((r) => r.key === "onestock_stock_request_name")?.value?.trim() || DEFAULT_STOCK_REQUEST_NAME;
-  const value = { token: decrypted, apiRoot: normalizeApiRoot(apiRoot), stockRequestName };
+  const defaultLang = rows.find((r) => r.key === "default_lang")?.value?.trim() || undefined;
+  const value = { token: decrypted, apiRoot: normalizeApiRoot(apiRoot), stockRequestName, defaultLang };
   cache.set(cacheKey, { at: Date.now(), value });
   return value;
 }

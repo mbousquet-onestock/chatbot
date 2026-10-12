@@ -88,6 +88,7 @@ export default defineEventHandler(async (event) => {
     const token = rows.find((r) => r.key === "onestock_token");
     const apiRoot = rows.find((r) => r.key === "onestock_api_root");
     const stockView = rows.find((r) => r.key === "onestock_stock_request_name");
+    const defaultLang = rows.find((r) => r.key === "default_lang");
     settings.push(
       {
         name: "onestock_token",
@@ -114,6 +115,15 @@ export default defineEventHandler(async (event) => {
         set: !!stockView,
         value: stockView?.value ?? DEFAULT_STOCK_REQUEST_NAME,
         note: stockView ? `|${stockView.site_id || "*"}` : "default",
+      },
+      {
+        name: "default_lang",
+        source: "settings",
+        required: false,
+        secret: false,
+        set: !!defaultLang,
+        value: defaultLang?.value ?? "fr",
+        note: defaultLang ? `|${defaultLang.site_id || "*"}` : "default",
       },
     );
   } else {

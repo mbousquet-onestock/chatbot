@@ -147,7 +147,8 @@ ORDER BY (site_id = $site_id) DESC
 ```
 
 `onestock_stock_request_name` (facultative) est la vue de stock OneStock (OMC > Configuration > Stock > Stock
-Queries) utilisée pour consulter le stock ; sans ligne dans `settings`, la vue `detailed` est utilisée. Pour
+Queries) utilisée pour consulter le stock ; sans ligne dans `settings`, la vue `detailed` est utilisée. `default_lang` (facultative) est la langue des fiches
+articles quand celle de l'utilisateur n'est pas disponible (puis français). Pour
 l'initialiser :
 
 ```sql
