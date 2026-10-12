@@ -2,6 +2,7 @@ import type OpenAI from "openai";
 import { missingAddressParts, sameAddress } from "./addresses";
 import { toOnestockDate } from "./dates";
 import { encodeId, onestockRequest, type OnestockResult } from "./onestock";
+import { getOnestockSettings } from "./settings";
 
 type Input = Record<string, any>;
 
@@ -463,8 +464,8 @@ export const TOOLS: Record<string, ToolSpec> = {
       name: "get_item_stock",
       description:
         "Stock en temps réel d'articles (GET /v1/stock_export) : quantité par point de stock et par type de stock " +
-        "(on_hand = en stock, in_transit = en transit avec date d'arrivée), selon la requête de stock configurée dans " +
-        "OneStock. Limiter aux points de stock utiles (endpoint_ids) quand c'est possible ; total_by_item = true " +
+        "(on_hand = en stock, in_transit = en transit avec date d'arrivée), selon la vue de stock configurée pour le " +
+        "site (clé onestock_stock_request_name de la table settings, « detailed » par défaut). Limiter aux points de stock utiles (endpoint_ids) quand c'est possible ; total_by_item = true " +
         "donne directement le total tous points de stock confondus.",
       input_schema: {
         type: "object",
@@ -476,11 +477,9 @@ export const TOOLS: Record<string, ToolSpec> = {
         required: ["item_ids"],
       },
     },
-    run(siteId, input) {
-      const requestName = process.env.ONESTOCK_STOCK_REQUEST_NAME?.trim();
-      if (!requestName) {
-        throw new Error("ONESTOCK_STOCK_REQUEST_NAME n'est pas configurée (nom de la requête de stock de l'OMC) : stock indisponible.");
-      }
+    async run(siteId, input) {
+      // Vue de stock lue dans la table settings (onestock_stock_request_name), « detailed » par défaut.
+      const requestName = (await getOnestockSettings(siteId)).stockRequestName;
       const items: string[] = (Array.isArray(input.item_ids) ? input.item_ids : [input.item_ids]).filter(Boolean).map(String).slice(0, 50);
       if (!items.length) throw new Error('"item_ids" is required');
       const endpoints: string[] = Array.isArray(input.endpoint_ids) ? input.endpoint_ids.filter(Boolean).map(String) : [];

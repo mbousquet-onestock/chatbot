@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { requireSession } from "../utils/session";
-import { databaseUrl, diagnoseSettings, readSettingsRows, type SettingDiagnosticRow } from "../utils/settings";
+import { DEFAULT_STOCK_REQUEST_NAME, databaseUrl, diagnoseSettings, readSettingsRows, type SettingDiagnosticRow } from "../utils/settings";
 import { onestockRequest } from "../utils/onestock";
 
 /** Une ligne de l'onglet Paramètres. Les secrets ne sont jamais renvoyés : seulement leur présence. */
@@ -70,7 +70,6 @@ export default defineEventHandler(async (event) => {
     },
     envEntry("OPENAI_API_KEY", { required: true, secret: true }),
     envEntry("OPENAI_MODEL", { defaultValue: "gpt-4o" }),
-    envEntry("ONESTOCK_STOCK_REQUEST_NAME"),
     envEntry("FRAME_ANCESTORS", { defaultValue: "'self' https://*.onestock-retail.com https://*.onestock-retail.dev" }),
   ];
   // Variables de développement local, affichées seulement si elles sont utilisées (pas de base).
@@ -88,6 +87,7 @@ export default defineEventHandler(async (event) => {
     checks.push({ name: "database", ok: true, detail: fromEnv ? "env-fallback" : `${db.ms} ms` });
     const token = rows.find((r) => r.key === "onestock_token");
     const apiRoot = rows.find((r) => r.key === "onestock_api_root");
+    const stockView = rows.find((r) => r.key === "onestock_stock_request_name");
     settings.push(
       {
         name: "onestock_token",
@@ -105,6 +105,15 @@ export default defineEventHandler(async (event) => {
         set: !!apiRoot,
         value: apiRoot?.value,
         note: apiRoot ? `|${apiRoot.site_id || "*"}` : undefined,
+      },
+      {
+        name: "onestock_stock_request_name",
+        source: "settings",
+        required: false,
+        secret: false,
+        set: !!stockView,
+        value: stockView?.value ?? DEFAULT_STOCK_REQUEST_NAME,
+        note: stockView ? `|${stockView.site_id || "*"}` : "default",
       },
     );
   } else {
@@ -124,7 +133,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // API OneStock : une recherche d'une seule commande valide l'URL et le token.
-  if (settings.every((s) => s.set) && db.result) {
+  if (settings.filter((s) => s.required).every((s) => s.set) && db.result) {
     const os = await timed(() =>
       onestockRequest(session.siteId, "GET", "/v2/search_orders", {
         fields: ["id"],

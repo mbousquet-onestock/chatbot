@@ -5,9 +5,14 @@ import { decryptSetting } from "../lib/settings-secrets.mjs";
 export interface OnestockSettings {
   token: string;
   apiRoot: string;
+  /** Vue (requête) de stock OneStock utilisée par GET /stock_export (défaut : DEFAULT_STOCK_REQUEST_NAME). */
+  stockRequestName: string;
 }
 
-const KEYS = ["onestock_token", "onestock_api_root"] as const;
+const KEYS = ["onestock_token", "onestock_api_root", "onestock_stock_request_name"] as const;
+
+/** Vue de stock utilisée quand `onestock_stock_request_name` n'est pas renseignée dans la table settings. */
+export const DEFAULT_STOCK_REQUEST_NAME = "detailed";
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { at: number; value: OnestockSettings }>();
 
@@ -49,9 +54,14 @@ export async function readSettingsRows(siteId: string): Promise<{ rows: SettingR
     key, value, site_id, encrypted: value.startsWith("enc:v1:"),
   });
   if (!databaseUrl() && process.env.ONESTOCK_API_ROOT && process.env.ONESTOCK_TOKEN) {
+    const stock = process.env.ONESTOCK_STOCK_REQUEST_NAME?.trim();
     return {
       fromEnv: true,
-      rows: [row("onestock_token", process.env.ONESTOCK_TOKEN, "*"), row("onestock_api_root", process.env.ONESTOCK_API_ROOT, "*")],
+      rows: [
+        row("onestock_token", process.env.ONESTOCK_TOKEN, "*"),
+        row("onestock_api_root", process.env.ONESTOCK_API_ROOT, "*"),
+        ...(stock ? [row("onestock_stock_request_name", stock, "*")] : []),
+      ],
     };
   }
   const environment = process.env.ONESTOCK_ENVIRONMENT?.trim() || null;
@@ -146,7 +156,9 @@ export async function getOnestockSettings(siteId: string): Promise<OnestockSetti
       statusMessage: "Cannot decrypt onestock_token: check SETTINGS_ENCRYPTION_KEY (same value as the Extensions application)",
     });
   }
-  const value = { token: decrypted, apiRoot: normalizeApiRoot(apiRoot) };
+  const stockRequestName =
+    rows.find((r) => r.key === "onestock_stock_request_name")?.value?.trim() || DEFAULT_STOCK_REQUEST_NAME;
+  const value = { token: decrypted, apiRoot: normalizeApiRoot(apiRoot), stockRequestName };
   cache.set(cacheKey, { at: Date.now(), value });
   return value;
 }
