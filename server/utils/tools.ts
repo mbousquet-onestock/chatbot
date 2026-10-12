@@ -431,6 +431,69 @@ export const TOOLS: Record<string, ToolSpec> = {
       }),
   },
 
+  get_item: {
+    write: false,
+    definition: {
+      name: "get_item",
+      description:
+        "Détail d'un ou plusieurs articles par identifiant exact (GET /v3/items, filtre ids) : toutes les " +
+        "caractéristiques (nom, description, image, prix, couleur, taille…) dans toutes les langues, produit et " +
+        "catégories. Pour trouver un article à partir d'un nom ou d'une référence partielle, utiliser search_items.",
+      input_schema: {
+        type: "object",
+        properties: { item_ids: { ...stringArray, maxItems: 20, description: "Identifiants d'articles (SKU)." } },
+        required: ["item_ids"],
+      },
+    },
+    run(siteId, input) {
+      const ids: string[] = (Array.isArray(input.item_ids) ? input.item_ids : [input.item_ids]).filter(Boolean).map(String).slice(0, 20);
+      if (!ids.length) throw new Error('"item_ids" is required');
+      return onestockRequest(siteId, "GET", "/v3/items", {
+        filters: { ids },
+        fields: ["product_id", "category_ids", "is_default"],
+        pagination: { limit: ids.length, start: 0 },
+        get_total: true,
+      });
+    },
+  },
+
+  get_item_stock: {
+    write: false,
+    definition: {
+      name: "get_item_stock",
+      description:
+        "Stock en temps réel d'articles (GET /v1/stock_export) : quantité par point de stock et par type de stock " +
+        "(on_hand = en stock, in_transit = en transit avec date d'arrivée), selon la requête de stock configurée dans " +
+        "OneStock. Limiter aux points de stock utiles (endpoint_ids) quand c'est possible ; total_by_item = true " +
+        "donne directement le total tous points de stock confondus.",
+      input_schema: {
+        type: "object",
+        properties: {
+          item_ids: { ...stringArray, maxItems: 50, description: "Identifiants d'articles (SKU)." },
+          endpoint_ids: { ...stringArray, description: "Points de stock à interroger (par défaut : ceux de la requête de stock)." },
+          total_by_item: { type: "boolean", description: "Additionner le stock de tous les points de stock." },
+        },
+        required: ["item_ids"],
+      },
+    },
+    run(siteId, input) {
+      const requestName = process.env.ONESTOCK_STOCK_REQUEST_NAME?.trim();
+      if (!requestName) {
+        throw new Error("ONESTOCK_STOCK_REQUEST_NAME n'est pas configurée (nom de la requête de stock de l'OMC) : stock indisponible.");
+      }
+      const items: string[] = (Array.isArray(input.item_ids) ? input.item_ids : [input.item_ids]).filter(Boolean).map(String).slice(0, 50);
+      if (!items.length) throw new Error('"item_ids" is required');
+      const endpoints: string[] = Array.isArray(input.endpoint_ids) ? input.endpoint_ids.filter(Boolean).map(String) : [];
+      return onestockRequest(siteId, "GET", "/v1/stock_export", compact({
+        request_name: requestName,
+        aggregates: {
+          "*": compact({ item_filter: { ids: items }, endpoint_filter: endpoints.length ? { ids: endpoints } : undefined }),
+        },
+        unification: input.total_by_item ? { by_endpoint: true, by_stock_type: true } : undefined,
+      }));
+    },
+  },
+
   search_items: {
     write: false,
     definition: {

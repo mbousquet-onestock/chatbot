@@ -47,6 +47,8 @@ Back-office OneStock        Front (iframe Vue)              Serveur (Nitro)     
 | `search_endpoints` | `GET /v3/endpoints` (ville, type, modules, proximité…) | lecture |
 | `get_line_item_groups` | `GET /v2/line_item_groups` | lecture |
 | `get_order_items_details` | `GET /v3/orders/{id}` (`order_items.item.features.*` : nom, description, image…) | lecture |
+| `get_item` | `GET /v3/items` (filtre `ids`) : détail d'articles par identifiant | lecture |
+| `get_item_stock` | `GET /v1/stock_export` : stock par article et point de stock (requête `ONESTOCK_STOCK_REQUEST_NAME`) | lecture |
 | `search_items` | `GET /v3/items` (catalogue : motif, product_ids, caractéristiques) | lecture |
 | `cancel_order` | `PATCH /v2/line_item_groups` : toutes les lignes → `removed` (une transition par état actuel) | **écriture** |
 | `update_order_state` | `PATCH /v3/orders/{id}` (`order.from` → `order.to`) | **écriture** |
@@ -118,6 +120,7 @@ Variables d'environnement (voir `.env.example`) :
 | `ALLOWED_SITE_IDS` | *Fortement recommandé.* Liste des `site_id` autorisés |
 | `OPENAI_API_KEY` | Clé API OpenAI |
 | `OPENAI_MODEL` | *Optionnel.* Défaut `gpt-4o` |
+| `ONESTOCK_STOCK_REQUEST_NAME` | Nom de la requête de stock OneStock (OMC > Configuration > Stock > Stock Queries) pour consulter le stock |
 | `FRAME_ANCESTORS` | *Optionnel.* Origines autorisées à intégrer l'iframe (défaut : domaines OneStock) |
 
 ### Onglet « Paramètres »

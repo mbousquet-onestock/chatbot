@@ -70,6 +70,7 @@ export default defineEventHandler(async (event) => {
     },
     envEntry("OPENAI_API_KEY", { required: true, secret: true }),
     envEntry("OPENAI_MODEL", { defaultValue: "gpt-4o" }),
+    envEntry("ONESTOCK_STOCK_REQUEST_NAME"),
     envEntry("FRAME_ANCESTORS", { defaultValue: "'self' https://*.onestock-retail.com https://*.onestock-retail.dev" }),
   ];
   // Variables de développement local, affichées seulement si elles sont utilisées (pas de base).
