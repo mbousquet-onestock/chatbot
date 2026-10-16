@@ -39,6 +39,11 @@ const texts = {
     no: "Non",
     location: "Point de stock",
     removed: "annulé",
+    apiTitle: { POST: "Créer", PUT: "Remplacer", PATCH: "Modifier", DELETE: "Supprimer" } as Record<string, string>,
+    apiDetails: "Informations envoyées",
+    apiTarget: "Élément concerné",
+    more: (n: number) => `… et ${n} autre(s) information(s)`,
+    empty: "(vide)",
   },
   en: {
     cancelTitle: "Cancel the order",
@@ -66,6 +71,11 @@ const texts = {
     no: "No",
     location: "Stock location",
     removed: "cancelled",
+    apiTitle: { POST: "Create", PUT: "Replace", PATCH: "Update", DELETE: "Delete" } as Record<string, string>,
+    apiDetails: "Information sent",
+    apiTarget: "Affected item",
+    more: (n: number) => `… and ${n} more`,
+    empty: "(empty)",
   },
 };
 
@@ -101,6 +111,27 @@ function itemNumbers(ranges: unknown, t: (typeof texts)["fr"]): string {
   if (numbers.length === 1) return t.item(numbers[0]!);
   const list = numbers.length > 1 ? `${numbers.slice(0, -1).join(", ")} ${t.and} ${numbers.at(-1)}` : "?";
   return t.items(list);
+}
+
+/** « clé › sous-clé : valeur » pour chaque valeur du corps, avec des libellés lisibles (sans « _ »). */
+function bodyLines(body: unknown, t: (typeof texts)["fr"], max = 30): string[] {
+  const lines: string[] = [];
+  const label = (k: string) => k.replace(/_/g, " ");
+  const walk = (v: unknown, path: string[]) => {
+    if (Array.isArray(v)) {
+      if (v.every((x) => x === null || typeof x !== "object")) {
+        lines.push(`${path.map(label).join(" › ")} : ${v.length ? v.join(", ") : t.empty}`);
+      } else v.forEach((x, i) => walk(x, [...path, `${i + 1}`]));
+    } else if (v && typeof v === "object") {
+      for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+        if (k !== "site_id" && k !== "token") walk(x, [...path, k]);
+      }
+    } else if (v !== undefined && v !== null && v !== "") {
+      lines.push(`${path.length ? `${path.map(label).join(" › ")} : ` : ""}${String(v)}`);
+    }
+  };
+  walk(body, []);
+  return lines.length > max ? [...lines.slice(0, max), t.more(lines.length - max)] : lines;
 }
 
 const stateLabel = (state: string, t: (typeof texts)["fr"]) => (state === "removed" ? t.removed : state);
@@ -165,6 +196,23 @@ export function summarizeAction(name: string, input: Input, lang?: string): Acti
         sections.push({ label: t.signature, lines: [input.sign_on_collect ? t.yes : t.no] });
       }
       return { title: t.updateTitle, description: t.updateText(id), sections };
+    }
+
+    case "call_onestock_api": {
+      const method = clean(input.method).toUpperCase();
+      // Identifiant de l'élément visé : derniers segments du chemin (ex. /v1/zones/zone_paris → zone_paris).
+      const path = clean(input.path).split("?")[0] ?? "";
+      const target = path.split("/").filter(Boolean).slice(1).join(" › ");
+      const details = bodyLines(input.body, t);
+      return {
+        title: clean(input.title) || `${t.apiTitle[method] ?? method} ${target}`,
+        description: clean(input.summary),
+        sections: [
+          ...(target ? [{ label: t.apiTarget, lines: [target] }] : []),
+          ...(details.length ? [{ label: t.apiDetails, lines: details }] : []),
+        ],
+        danger: method === "DELETE",
+      };
     }
 
     default:

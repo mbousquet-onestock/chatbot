@@ -3,6 +3,7 @@ import { missingAddressParts, sameAddress } from "./addresses";
 import { toOnestockDate } from "./dates";
 import { encodeId, onestockRequest, type OnestockResult } from "./onestock";
 import { getOnestockSettings } from "./settings";
+import { checkCall, describeOperation, findOperations, listCategories, matchOperation, safeConcretePath } from "./apiCatalog";
 
 type Input = Record<string, any>;
 
@@ -37,8 +38,11 @@ async function readOrderState(siteId: string, orderId: string): Promise<Onestock
 
 export interface ToolSpec {
   definition: ToolDefinition;
-  /** Une action d'écriture n'est exécutée qu'après confirmation explicite de l'utilisateur. */
-  write: boolean;
+  /**
+   * Une action d'écriture n'est exécutée qu'après confirmation explicite de l'utilisateur. Fonction : l'outil
+   * générique est une écriture selon la méthode HTTP demandée.
+   */
+  write: boolean | ((input: Input) => boolean);
   run: (siteId: string, input: Input, ctx: ToolContext) => Promise<OnestockResult & { notice?: ToolNotice }>;
   /**
    * Contrôle d'une action d'écriture avant la carte de confirmation : renvoie un message pour le modèle si les
@@ -53,6 +57,9 @@ export interface ToolContext {
   /** Langue de l'utilisateur (ex. fr), pour les caractéristiques des articles. */
   lang?: string;
 }
+
+/** Taille maximale d'une réponse d'API générique transmise au modèle. */
+const MAX_API_RESPONSE_CHARS = 40_000;
 
 /** Caractéristiques des articles incluses dans la lecture d'une commande. */
 const ORDER_ITEM_FEATURES = ["name", "description", "image_url"];
@@ -924,6 +931,112 @@ export const TOOLS: Record<string, ToolSpec> = {
       }));
     },
   },
+
+  find_api_operations: {
+    write: false,
+    definition: {
+      name: "find_api_operations",
+      description:
+        "Recherche dans le catalogue complet des API OneStock (≈ 750 routes) quand aucun outil dédié ne convient : " +
+        "fiches articles et produits, création de commande, zones et routes de livraison, transporteurs, points de " +
+        "stock, canaux de vente, clients, retours, paiements, gestes commerciaux, capacités, réservations, règles " +
+        "d'orchestration, cartes cadeaux, taxes, webhooks… Mots-clés en français ou en anglais (ex. « zone », " +
+        "« delivery route », « créer commande »). Sans mot-clé ni catégorie : liste des catégories. Renvoie méthode, " +
+        "chemin (avec version) et résumé ; ensuite, describe_api_operation pour le détail.",
+      input_schema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Mots-clés (ressource, action)." },
+          method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], description: "Filtrer par méthode." },
+          category: { type: "string", description: "Filtrer par catégorie (ex. Delivery Promise, Product Information)." },
+        },
+      },
+    },
+    async run(_siteId, input) {
+      const query = typeof input.query === "string" ? input.query : "";
+      if (!query.trim() && !input.category) return { ok: true, status: 200, data: { categories: await listCategories() } };
+      const data = await findOperations(query, { method: input.method, tag: input.category });
+      return { ok: true, status: 200, data };
+    },
+  },
+
+  describe_api_operation: {
+    write: false,
+    definition: {
+      name: "describe_api_operation",
+      description:
+        "Documentation d'une route OneStock : description, paramètres de chemin, champs obligatoires, schéma du " +
+        "corps et exemple. À lire avant tout appel avec call_onestock_api, pour savoir quelles informations " +
+        "demander à l'utilisateur. schema_name permet de lire un sous-schéma signalé par « see_schema ».",
+      input_schema: {
+        type: "object",
+        properties: {
+          method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+          path: { type: "string", description: "Chemin, ex. /v1/zones ou /v1/zones/{id}." },
+          schema_name: { type: "string", description: "Nom d'un sous-schéma (valeur de see_schema)." },
+        },
+        required: ["method", "path"],
+      },
+    },
+    async run(_siteId, input) {
+      const data = await describeOperation(String(input.method ?? "GET"), String(input.path ?? ""), input.schema_name || undefined);
+      return { ok: !("error" in data), status: "error" in data ? 404 : 200, data };
+    },
+  },
+
+  call_onestock_api: {
+    // Lecture (GET) exécutée directement ; toute autre méthode passe par la carte de confirmation.
+    write: (input) => String(input.method ?? "GET").toUpperCase() !== "GET",
+    definition: {
+      name: "call_onestock_api",
+      description:
+        "Appel d'une route de l'API OneStock du catalogue (après describe_api_operation). GET = lecture, exécutée " +
+        "directement ; POST, PUT, PATCH, DELETE = création, modification ou suppression, soumises à la confirmation " +
+        "de l'utilisateur. site_id et token sont ajoutés automatiquement. Les routes d'authentification et de droits " +
+        "d'accès ne sont pas disponibles.",
+      input_schema: {
+        type: "object",
+        properties: {
+          method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+          path: { type: "string", description: "Chemin concret avec version, ex. /v1/zones/zone_paris (identifiants réels)." },
+          body: { type: "object", description: "Corps JSON de la requête (filtres, champs, objet à créer ou modifier).", additionalProperties: true },
+          title: { type: "string", description: "Écriture : titre court de l'action pour l'utilisateur, dans sa langue, sans jargon (ex. « Créer la zone Île-de-France »)." },
+          summary: { type: "string", description: "Écriture : une ou deux phrases qui expliquent à l'utilisateur, sans jargon technique, ce qui va être créé, modifié ou supprimé." },
+        },
+        required: ["method", "path"],
+      },
+    },
+    async validate(_siteId, input) {
+      const method = String(input.method ?? "GET").toUpperCase();
+      const problem = await checkCall(method, String(input.path ?? ""), input.body);
+      if (problem) return problem;
+      if (method !== "GET" && (!input.title || !input.summary)) {
+        return "Renseigne title et summary (récapitulatif compréhensible par l'utilisateur) pour cette action, puis rappelle l'outil.";
+      }
+      return undefined;
+    },
+    async run(siteId, input) {
+      const method = String(input.method ?? "GET").toUpperCase() as "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+      const problem = await checkCall(method, String(input.path ?? ""), input.body);
+      if (problem) return { ok: false, status: 400, data: { error: problem } };
+      const found = (await matchOperation(method, String(input.path)))!;
+      const body = input.body && typeof input.body === "object" && !Array.isArray(input.body) ? { ...(input.body as Input) } : {};
+      delete body.site_id;
+      delete body.token;
+      const res = await onestockRequest(siteId, method, `/${found.version}${safeConcretePath(found.concretePath)}`, body);
+      // Réponses volumineuses (listes) tronquées pour rester dans le contexte du modèle.
+      const text = JSON.stringify(res.data ?? null);
+      if (text.length <= MAX_API_RESPONSE_CHARS) return res;
+      return {
+        ...res,
+        data: {
+          truncated: true,
+          note: "Réponse tronquée : affiner la requête (fields, filtres, pagination.limit).",
+          partial_json: text.slice(0, MAX_API_RESPONSE_CHARS),
+        },
+      };
+    },
+  },
 };
 
 /** Outils au format « function calling » d'OpenAI. */
@@ -932,7 +1045,11 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = Object.values(
   function: { name: definition.name, description: definition.description, parameters: definition.input_schema },
 }));
 
-export const isWriteTool = (name: string) => TOOLS[name]?.write === true;
+/** Action d'écriture (confirmation obligatoire) ; un appel d'API générique l'est pour toute méthode autre que GET. */
+export function isWriteTool(name: string, input: unknown = {}): boolean {
+  const write = TOOLS[name]?.write;
+  return typeof write === "function" ? write((input ?? {}) as Input) : write === true;
+}
 
 /** Contrôle avant confirmation (voir ToolSpec.validate) ; une erreur de contrôle n'empêche pas la proposition. */
 export async function validateTool(siteId: string, name: string, input: unknown): Promise<string | undefined> {

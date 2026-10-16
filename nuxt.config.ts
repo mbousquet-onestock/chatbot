@@ -19,6 +19,8 @@ export default defineNuxtConfig({
   nitro: {
     // Vercel (preset détecté automatiquement) : une réponse du chat enchaîne plusieurs appels au modèle et à l'API.
     vercel: { functions: { maxDuration: 300 } },
+    // Catalogue des API OneStock (scripts/build_api_catalog.py), lu par useStorage("assets:onestock").
+    serverAssets: [{ baseName: "onestock", dir: "data" }],
   },
   typescript: { strict: true },
 });

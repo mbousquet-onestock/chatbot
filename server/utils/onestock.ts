@@ -1,6 +1,6 @@
 import { getOnestockSettings } from "./settings";
 
-export type HttpMethod = "GET" | "PATCH" | "POST";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface OnestockResult {
   ok: boolean;

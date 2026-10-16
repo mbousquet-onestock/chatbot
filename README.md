@@ -94,6 +94,34 @@ l'interface affiche une carte « Action à confirmer » : un récapitulatif réd
 (phrase explicative, client, adresses de livraison et de facturation présentées comme sur une fiche). L'appel à OneStock n'est fait
 qu'après clic sur **Confirmer** ; un refus est renvoyé au modèle, qui n'insiste pas.
 
+### Toutes les API OneStock (catalogue)
+
+En plus des outils dédiés aux commandes, l'assistant peut utiliser toutes les routes de l'API OneStock (fiches
+articles et produits, création de commande, zones et routes de livraison, transporteurs, points de stock,
+canaux de vente, clients, retours, paiements, capacités, règles…) grâce à trois outils génériques :
+
+| Outil | Rôle |
+|---|---|
+| `find_api_operations` | Recherche d'une route par mots-clés (français ou anglais), méthode ou catégorie |
+| `describe_api_operation` | Documentation d'une route : champs obligatoires, schéma du corps, exemple |
+| `call_onestock_api` | Appel de la route : GET exécuté directement, POST/PUT/PATCH/DELETE après confirmation |
+
+Pour une création ou une modification, l'assistant lit la documentation de la route, demande à l'utilisateur
+les informations obligatoires manquantes (en langage métier), retrouve lui-même les identifiants existants
+(points de stock, transporteurs…), puis propose l'action avec un récapitulatif à confirmer. Le serveur refuse
+d'envoyer une demande dont un champ obligatoire manque ou qui contient un champ inconnu, et tronque les réponses
+trop volumineuses.
+
+Les routes d'authentification et de droits d'accès (catégories Authentication, Access Control List, gateway ;
+chemins contenant login, password, token…) ne sont pas exposées.
+
+Le catalogue `server/data/onestock-api.json` est généré à partir de la spécification OpenAPI :
+
+```bash
+pip install pyyaml
+python3 scripts/build_api_catalog.py chemin/vers/APIInterneOneStock.yaml
+```
+
 ### Anchors OneStock
 
 Une seule URL sert tous les anchors ; le comportement s'adapte au contexte reçu :
@@ -214,6 +242,8 @@ composants de `app/components/os/` par `import { OsButton, OsBadge, OsAlert, OsI
   base, et ouvrir les documents des colis. Limitez `ALLOWED_SITE_IDS` au strict nécessaire et protégez l'URL
   (par exemple Deployment Protection de Vercel).
 - Le token OneStock reste côté serveur et n'est jamais envoyé au navigateur.
+- Avec le catalogue complet, l'assistant peut créer, modifier ou supprimer toute ressource accessible au compte
+  du token (zones, routes, règles, points de stock…), toujours après confirmation de l'utilisateur.
 - Les appels OneStock utilisent l'utilisateur technique de `onestock_token` : les droits effectifs sont ceux
   de ce compte. Restreignez l'accès à l'extension par rôle dans la configuration de l'anchor.
 - L'historique de conversation est conservé par le navigateur et renvoyé à chaque requête : il n'y a pas de

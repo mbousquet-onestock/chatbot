@@ -43,3 +43,23 @@ test("cancellations and item changes are plain sentences, item numbers start at 
   const s = summarizeAction("update_line_item_groups_state", { order_id: "A", index_ranges: [{ from: 0, to: 1 }, { from: 3, to: 3 }], from: "pending", to: "removed" }, "fr");
   assert.equal(s.description, "Les articles n° 1, 2 et 4 de la commande A passeront du statut « pending » au statut « annulé ».");
 });
+
+test("generic API call: business title, target and readable details", () => {
+  const s = summarizeAction("call_onestock_api", {
+    method: "DELETE",
+    path: "/v1/zones/idf",
+    title: "Supprimer la zone Île-de-France",
+    summary: "La zone ne sera plus utilisée pour calculer les livraisons.",
+  }, "fr");
+  assert.equal(s.title, "Supprimer la zone Île-de-France");
+  assert.equal(s.danger, true);
+  assert.deepEqual(s.sections, [{ label: "Élément concerné", lines: ["zones › idf"] }]);
+
+  const c = summarizeAction("call_onestock_api", {
+    method: "POST",
+    path: "/v1/zones",
+    body: { site_id: "c42", zone: { name: "IDF", zip_codes: ["75", "92"] } },
+  }, "fr");
+  assert.equal(c.title, "Créer zones");
+  assert.deepEqual(c.sections.at(-1).lines, ["zone › name : IDF", "zone › zip codes : 75, 92"]);
+});

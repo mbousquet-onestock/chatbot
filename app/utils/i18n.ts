@@ -135,6 +135,9 @@ const fr = {
     check_shipping_address_change: "Vérification de l'adresse de livraison",
     update_order: "Mise à jour de la commande",
     update_line_item_groups_state: "Changement d'état d'articles",
+    find_api_operations: "Recherche dans les API OneStock",
+    describe_api_operation: "Lecture de la documentation de l'API",
+    call_onestock_api: "Appel à l'API OneStock",
   } as Record<string, string>,
   fields: {
     order_id: "Commande",
@@ -283,6 +286,9 @@ const en: Dict = {
     check_shipping_address_change: "Checking the shipping address",
     update_order: "Order update",
     update_line_item_groups_state: "Item state change",
+    find_api_operations: "Searching the OneStock APIs",
+    describe_api_operation: "Reading the API documentation",
+    call_onestock_api: "Calling the OneStock API",
   },
   fields: {
     order_id: "Order",

@@ -26,7 +26,8 @@ type ChatEvent =
   | { type: "error"; message: string };
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
-const MAX_ITERATIONS = 12;
+// Les demandes guidées par le catalogue d'API enchaînent recherche, documentation, lectures et action.
+const MAX_ITERATIONS = 20;
 const MAX_BODY_CHARS = 4_000_000;
 
 let openai: OpenAI | undefined;
@@ -84,7 +85,7 @@ export default defineEventHandler(async (event) => {
           calls.map(async (call): Promise<MessageParam> => {
             const name = call.function.name;
             const args = parseArguments(call);
-            if (isWriteTool(name) && decisions[call.id] !== true) {
+            if (isWriteTool(name, args) && decisions[call.id] !== true) {
               send({ type: "tool", id: call.id, name, input: args, status: "declined" });
               return { role: "tool", tool_call_id: call.id, content: "L'utilisateur a refusé cette action : elle n'a pas été exécutée." };
             }
@@ -142,7 +143,7 @@ export default defineEventHandler(async (event) => {
           }
           if (!calls.length) break;
 
-          const writes = calls.filter((c) => isWriteTool(c.function.name));
+          const writes = calls.filter((c) => isWriteTool(c.function.name, parseArguments(c)));
           // Écritures aux paramètres incomplets (ex. adresse non fournie) : pas de carte de confirmation, le modèle
           // reçoit la raison et doit demander l'information manquante à l'utilisateur.
           const problems = new Map<string, string>();
