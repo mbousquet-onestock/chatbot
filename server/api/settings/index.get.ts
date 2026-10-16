@@ -1,7 +1,7 @@
 import OpenAI from "openai";
-import { requireSession } from "../utils/session";
-import { DEFAULT_STOCK_REQUEST_NAME, databaseUrl, diagnoseSettings, readSettingsRows, type SettingDiagnosticRow } from "../utils/settings";
-import { onestockRequest } from "../utils/onestock";
+import { requireSession } from "../../utils/session";
+import { DEFAULT_STOCK_REQUEST_NAME, databaseUrl, diagnoseSettings, readSettingsRows, type SettingDiagnosticRow } from "../../utils/settings";
+import { onestockRequest } from "../../utils/onestock";
 
 /** Une ligne de l'onglet Paramètres. Les secrets ne sont jamais renvoyés : seulement leur présence. */
 interface ConfigEntry {
@@ -70,6 +70,7 @@ export default defineEventHandler(async (event) => {
     },
     envEntry("OPENAI_API_KEY", { required: true, secret: true }),
     envEntry("OPENAI_MODEL", { defaultValue: "gpt-4o" }),
+    { ...envEntry("SETTINGS_ADMIN_PASSWORD", { secret: true }), note: env("SETTINGS_ADMIN_PASSWORD") ? undefined : "edit-disabled" },
     envEntry("FRAME_ANCESTORS", { defaultValue: "'self' https://*.onestock-retail.com https://*.onestock-retail.dev" }),
   ];
   // Variables de développement local, affichées seulement si elles sont utilisées (pas de base).
@@ -177,5 +178,6 @@ export default defineEventHandler(async (event) => {
     settings,
     checks,
     rows,
+    edit: { enabled: !!env("SETTINGS_ADMIN_PASSWORD"), environment: env("ONESTOCK_ENVIRONMENT") ?? rows.find((r) => r.status === "used")?.environment ?? "" },
   };
 });

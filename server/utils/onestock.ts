@@ -21,8 +21,10 @@ export async function onestockFetch(
   path: string,
   body: Record<string, unknown> = {},
   accept = "application/json",
+  config?: { token: string; apiRoot: string },
 ): Promise<Response> {
-  const { token, apiRoot } = await getOnestockSettings(siteId);
+  // `config` : valeurs saisies dans l'onglet Paramètres, testées avant d'être enregistrées.
+  const { token, apiRoot } = config ?? (await getOnestockSettings(siteId));
   const isGet = method === "GET";
   return fetch(`${apiRoot}${path}`, {
     method: isGet ? "POST" : method,
@@ -42,8 +44,9 @@ export async function onestockRequest(
   method: HttpMethod,
   path: string,
   body: Record<string, unknown> = {},
+  config?: { token: string; apiRoot: string },
 ): Promise<OnestockResult> {
-  const res = await onestockFetch(siteId, method, path, body);
+  const res = await onestockFetch(siteId, method, path, body, "application/json", config);
   const text = await res.text();
   let data: unknown = text;
   try {

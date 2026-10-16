@@ -121,11 +121,12 @@ Variables d'environnement (voir `.env.example`) :
 | `OPENAI_API_KEY` | Clé API OpenAI |
 | `OPENAI_MODEL` | *Optionnel.* Défaut `gpt-4o` |
 | `FRAME_ANCESTORS` | *Optionnel.* Origines autorisées à intégrer l'iframe (défaut : domaines OneStock) |
+| `SETTINGS_ADMIN_PASSWORD` | *Optionnel.* Mot de passe demandé pour enregistrer les paramètres depuis l'onglet Paramètres (sans elle : enregistrement désactivé) |
 
 ### Onglet « Paramètres »
 
 L'interface a deux onglets : **Assistant** et **Paramètres**. L'onglet Paramètres (`GET /api/settings`,
-lecture seule, accessible à tout utilisateur de l'extension) affiche :
+accessible à tout utilisateur de l'extension) affiche :
 
 - le contexte : site, utilisateur et extension reçus de OneStock ;
 - les connexions testées : base de données, API OneStock (recherche d'une commande) et API OpenAI (lecture du
@@ -134,7 +135,23 @@ lecture seule, accessible à tout utilisateur de l'extension) affiche :
 - chaque variable d'environnement : définie, manquante ou valeur par défaut.
 
 Les secrets ne sont jamais renvoyés au navigateur : seule leur présence est indiquée. Pour `ALLOWED_SITE_IDS`, l'onglet indique seulement le nombre de sites et si le site
-courant en fait partie. Les valeurs se modifient dans Vercel (puis redéploiement) ou dans l'application Extensions.
+courant en fait partie. Les variables d'environnement se modifient dans Vercel (puis redéploiement).
+
+#### Saisie et test des paramètres OneStock
+
+Le bloc « Configuration OneStock » permet de saisir `onestock_api_root`, `onestock_token`,
+`onestock_stock_request_name` (vue de stock, défaut `detailed`) et `default_lang` :
+
+- **Tester les connexions** (`POST /api/settings/test`) teste les valeurs saisies, sans rien enregistrer : base de
+  données, API OneStock (URL + token), vue de stock (`/v1/stock_export`), langue par défaut (`/v3/items`) et API
+  OpenAI. Un champ vide reprend la valeur enregistrée.
+- **Enregistrer** (`PUT /api/settings`) écrit uniquement les valeurs modifiées dans `settings`, pour tous les sites
+  (`site_id = '*'`) ou le site courant, et pour l'`environment` indiqué. Le token est chiffré (`enc:v1:`) avec
+  `SETTINGS_ENCRYPTION_KEY`, comme dans l'application Extensions. Une ligne existante (même clé, site et
+  environment) est mise à jour, sinon une ligne est créée.
+- L'enregistrement exige `SETTINGS_ADMIN_PASSWORD` (défini dans Vercel) ; sans cette variable il est désactivé.
+- Si l'URL de l'API change, le token doit être ressaisi : le token enregistré n'est jamais envoyé à une autre adresse.
+- Le token enregistré n'est jamais renvoyé au navigateur.
 
 Requête utilisée pour la configuration (colonnes `key`, `value`, `environment`, `site_id`) :
 

@@ -129,6 +129,40 @@ export async function diagnoseSettings(siteId: string): Promise<{ rows: SettingD
   return { rows, decrypt };
 }
 
+/** Vérifie que la base répond et que la table settings existe. */
+export async function pingDatabase(): Promise<number> {
+  const rows = (await sql()`SELECT count(*)::int AS n FROM settings`) as { n: number }[];
+  return rows[0]?.n ?? 0;
+}
+
+/** Clés modifiables depuis l'onglet Paramètres. */
+export const EDITABLE_KEYS = ["onestock_api_root", "onestock_token", "onestock_stock_request_name", "default_lang"] as const;
+export type EditableKey = (typeof EDITABLE_KEYS)[number];
+
+/** Vide le cache de configuration (après un enregistrement). */
+export function clearSettingsCache() {
+  cache.clear();
+}
+
+/**
+ * Enregistre une valeur dans `settings` pour (key, site_id, environment) : mise à jour de la ligne existante,
+ * sinon insertion. Renvoie "updated" ou "inserted".
+ */
+export async function writeSetting(
+  key: EditableKey,
+  value: string,
+  siteId: string,
+  environment: string,
+): Promise<"updated" | "inserted"> {
+  const updated = (await sql()`
+    UPDATE settings SET value = ${value}
+    WHERE key = ${key} AND site_id = ${siteId} AND environment = ${environment}
+    RETURNING key`) as unknown[];
+  if (updated.length) return "updated";
+  await sql()`INSERT INTO settings (key, value, site_id, environment) VALUES (${key}, ${value}, ${siteId}, ${environment})`;
+  return "inserted";
+}
+
 /** Configuration OneStock déchiffrée d'un site, gardée 5 min en cache mémoire. */
 export async function getOnestockSettings(siteId: string): Promise<OnestockSettings> {
   const cacheKey = `${process.env.ONESTOCK_ENVIRONMENT?.trim() ?? ""}|${siteId}`;
