@@ -34,7 +34,7 @@ const texts = {
     defaultLang: "Langue par défaut",
     scope: "Portée",
     scopeSite: (s: string) => `Ce site (${s})`,
-    scopeGlobal: "Tous les sites (*)",
+    scopeGlobal: "Tous les sites (global)",
     environment: "Environment",
     adminPassword: "Mot de passe administrateur",
     test: "Tester les connexions",
@@ -50,6 +50,7 @@ const texts = {
       missing_environment: "Indiquez l'environment.",
     } as Record<string, string>,
     names: {
+      settings_api: "API Settings (Extensions)",
       database: "Base de données",
       onestock: "API OneStock (URL et token)",
       stock_view: "Vue de stock",
@@ -57,7 +58,7 @@ const texts = {
       openai: "API OpenAI",
     } as Record<string, string>,
     details: {
-      "missing-database": "DATABASE_URL / POSTGRES_URL manquante",
+      "missing-database": "SETTINGS_API_URL + SETTINGS_API_KEY (ou DATABASE_URL) manquantes",
       "missing-api-root": "URL de l'API manquante",
       "missing-token": "token manquant",
       "missing-key": "OPENAI_API_KEY manquante",
@@ -74,7 +75,7 @@ const texts = {
     defaultLang: "Default language",
     scope: "Scope",
     scopeSite: (s: string) => `This site (${s})`,
-    scopeGlobal: "All sites (*)",
+    scopeGlobal: "All sites (global)",
     environment: "Environment",
     adminPassword: "Admin password",
     test: "Test connections",
@@ -90,6 +91,7 @@ const texts = {
       missing_environment: "Enter the environment.",
     } as Record<string, string>,
     names: {
+      settings_api: "Settings API (Extensions)",
       database: "Database",
       onestock: "OneStock API (URL and token)",
       stock_view: "Stock view",
@@ -97,7 +99,7 @@ const texts = {
       openai: "OpenAI API",
     } as Record<string, string>,
     details: {
-      "missing-database": "DATABASE_URL / POSTGRES_URL missing",
+      "missing-database": "SETTINGS_API_URL + SETTINGS_API_KEY (or DATABASE_URL) missing",
       "missing-api-root": "API URL missing",
       "missing-token": "token missing",
       "missing-key": "OPENAI_API_KEY missing",

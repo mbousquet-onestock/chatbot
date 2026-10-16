@@ -113,9 +113,12 @@ Variables d'environnement (voir `.env.example`) :
 
 | Variable | Rôle |
 |---|---|
-| `DATABASE_URL` | Base Neon/Vercel contenant la table `settings` (`POSTGRES_URL` accepté aussi) |
-| `SETTINGS_ENCRYPTION_KEY` | Clé de déchiffrement des settings (identique à l'application Extensions) |
-| `ONESTOCK_ENVIRONMENT` | *Optionnel.* Filtre `settings.environment` (sinon toutes les valeurs) |
+| `SETTINGS_API_URL` | URL de l'API Settings de l'application Extensions, ex. `https://extensions-lemon.vercel.app/api/settings` (source recommandée) |
+| `SETTINGS_API_KEY` | Clé d'API du chatbot, ajoutée à `SETTINGS_API_KEYS` de l'application Extensions |
+| `SETTINGS_EXTENSION_ID` | *Optionnel.* `extension_id` propre au chatbot dans `settings`, prioritaire sur `*` |
+| `DATABASE_URL` | *Sans API Settings.* Accès direct à la base contenant `settings` (`POSTGRES_URL` accepté aussi) |
+| `SETTINGS_ENCRYPTION_KEY` | *Sans API Settings.* Clé de déchiffrement des settings (identique à l'application Extensions) |
+| `ONESTOCK_ENVIRONMENT` | *Recommandé.* Environment à utiliser (`qualif`, `prod`…) ; sinon celui de l'`onestock_api_root` retenue |
 | `EXTENSION_ID` | *Optionnel.* Restreint à cet `extension_id` |
 | `ALLOWED_SITE_IDS` | *Fortement recommandé.* Liste des `site_id` autorisés |
 | `OPENAI_API_KEY` | Clé API OpenAI |
@@ -142,26 +145,29 @@ courant en fait partie. Les variables d'environnement se modifient dans Vercel (
 Le bloc « Configuration OneStock » permet de saisir `onestock_api_root`, `onestock_token`,
 `onestock_stock_request_name` (vue de stock, défaut `detailed`) et `default_lang` :
 
-- **Tester les connexions** (`POST /api/settings/test`) teste les valeurs saisies, sans rien enregistrer : base de
-  données, API OneStock (URL + token), vue de stock (`/v1/stock_export`), langue par défaut (`/v3/items`) et API
+- **Tester les connexions** (`POST /api/settings/test`) teste les valeurs saisies, sans rien enregistrer : API
+  Settings (ou base), API OneStock (URL + token), vue de stock (`/v1/stock_export`), langue par défaut (`/v3/items`) et API
   OpenAI. Un champ vide reprend la valeur enregistrée.
-- **Enregistrer** (`PUT /api/settings`) écrit uniquement les valeurs modifiées dans `settings`, pour tous les sites
-  (`site_id = '*'`) ou le site courant, et pour l'`environment` indiqué. Le token est chiffré (`enc:v1:`) avec
-  `SETTINGS_ENCRYPTION_KEY`, comme dans l'application Extensions. Une ligne existante (même clé, site et
-  environment) est mise à jour, sinon une ligne est créée.
+- **Enregistrer** (`PUT /api/settings`) écrit uniquement les valeurs modifiées, pour tous les sites (`site_id`
+  vide = global) ou le site courant, avec `extension_id = SETTINGS_EXTENSION_ID` (défaut `*`) et l'`environment`
+  indiqué, par `PUT …/api/settings/item?upsert=1` de l'API Settings (qui chiffre le token). En accès direct à la
+  base, le token est chiffré ici (`enc:v1:`) avec `SETTINGS_ENCRYPTION_KEY`.
 - L'enregistrement exige `SETTINGS_ADMIN_PASSWORD` (défini dans Vercel) ; sans cette variable il est désactivé.
 - Si l'URL de l'API change, le token doit être ressaisi : le token enregistré n'est jamais envoyé à une autre adresse.
 - Le token enregistré n'est jamais renvoyé au navigateur.
 
-Requête utilisée pour la configuration (colonnes `key`, `value`, `environment`, `site_id`) :
+#### Lecture des settings
 
-```sql
-SELECT key, value FROM settings
-WHERE key IN ('onestock_token', 'onestock_api_root')
-  AND (environment = $ONESTOCK_ENVIRONMENT OR $ONESTOCK_ENVIRONMENT IS NULL)
-  AND (site_id = $site_id OR site_id IN ('*', ''))
-ORDER BY (site_id = $site_id) DESC
-```
+Avec `SETTINGS_API_URL` + `SETTINGS_API_KEY`, les settings sont lus par l'API Settings de l'application Extensions
+(`GET …/api/settings?key=…&decrypt=1`, token déjà déchiffré : `SETTINGS_ENCRYPTION_KEY` est inutile côté chatbot).
+Sinon, ils sont lus directement dans la table (`DATABASE_URL`). Pour chaque clé, une seule ligne est retenue :
+
+1. **environment** : `ONESTOCK_ENVIRONMENT` ; à défaut, celui de l'`onestock_api_root` retenue. Le token et l'URL
+   viennent donc toujours du même environment (un token de prod n'est jamais envoyé à l'API de qualif) ;
+2. **extension** : `SETTINGS_EXTENSION_ID` puis `*` ; les lignes des autres extensions sont ignorées ;
+3. **site** : la ligne du site puis la ligne globale (`site_id` vide ou `*`).
+
+L'onglet Paramètres liste toutes les lignes avec la raison pour laquelle chacune est utilisée ou ignorée.
 
 `onestock_stock_request_name` (facultative) est la vue de stock OneStock (OMC > Configuration > Stock > Stock
 Queries) utilisée pour consulter le stock ; sans ligne dans `settings`, la vue `detailed` est utilisée. `default_lang` (facultative) est la langue des fiches

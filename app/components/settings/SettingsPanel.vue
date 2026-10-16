@@ -19,7 +19,7 @@ interface SettingsReport {
   settings: ConfigEntry[];
   checks: Check[];
   /** Toutes les lignes onestock_token / onestock_api_root de la table, sans valeur. */
-  rows?: { key: string; site_id: string; environment: string; encrypted: boolean; empty: boolean; status: string }[];
+  rows?: { key: string; site_id: string; extension_id?: string; environment: string; encrypted: boolean; empty: boolean; status: string }[];
   edit?: { enabled: boolean; environment: string };
 }
 
@@ -60,14 +60,15 @@ function noteText(e: ConfigEntry): string {
   if (n === "default") return t.value.defaultValue;
   if (n === "edit-disabled") return t.value.editDisabled;
   if (n === "POSTGRES_URL") return "POSTGRES_URL";
-  if (n === "all") return t.value.allEnvironments;
+  if (n === "auto") return t.value.allEnvironments;
+  if (n === "unused-api") return t.value.unusedApi;
   if (e.name === "ALLOWED_SITE_IDS") {
     const [count, current] = n.split("|");
     return `${count} ${t.value.sites} · ${current === "current" ? t.value.currentIncluded : t.value.currentExcluded}`;
   }
   if (e.source === "settings") {
     const [enc, scope] = n.split("|");
-    return [enc === "encrypted" ? t.value.encrypted : enc === "plain" ? t.value.plain : "", `${t.value.scope} : ${scope}`]
+    return [enc === "encrypted" ? t.value.encrypted : enc === "plain" ? t.value.plain : "", `site · extension · environment : ${scope}`]
       .filter(Boolean)
       .join(" · ");
   }
@@ -90,7 +91,7 @@ const currentValues = computed(() => {
 
 const checkDetail = (c: Check) =>
   t.value.errors[c.detail] ?? (c.detail === "env-fallback" ? t.value.envFallback : c.name === "decrypt" && c.detail === "ok" ? "" : c.detail);
-const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_environment: "orange" } as const;
+const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_extension: "grey", other_environment: "orange" } as const;
 </script>
 
 <template>
@@ -145,7 +146,7 @@ const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_en
           <div v-for="(r, i) in report.rows" :key="i" class="row entry">
             <div class="label">
               <code>{{ r.key }}</code>
-              <span class="os-body-s os-text-secondary">site_id : {{ r.site_id || "(vide)" }} · environment : {{ r.environment || "(vide)" }}</span>
+              <span class="os-body-s os-text-secondary">site_id : {{ r.site_id || "(global)" }} · extension_id : {{ r.extension_id || "*" }} · environment : {{ r.environment || "(vide)" }}</span>
             </div>
             <div class="value os-body-s os-text-secondary">
               {{ r.empty ? t.emptyValue : r.encrypted ? t.encrypted : t.plain }}

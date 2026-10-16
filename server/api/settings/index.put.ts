@@ -1,11 +1,10 @@
 import { requireSession } from "../../utils/session";
-import { encryptSetting } from "../../utils/encrypt";
 import { EDITABLE_KEYS, clearSettingsCache, normalizeApiRoot, writeSetting, type EditableKey } from "../../utils/settings";
 import { checkAdminPassword, resolveCandidate, type SettingsFormValues } from "../../utils/settingsForm";
 
 interface SaveBody {
   values?: SettingsFormValues;
-  /** Portée : ce site (site_id du contexte) ou tous les sites (`*`). */
+  /** Portée : ce site (site_id du contexte) ou tous les sites (site_id vide = global). */
   scope?: "site" | "global";
   environment?: string;
   admin_password?: string;
@@ -19,7 +18,7 @@ export default defineEventHandler(async (event) => {
 
   const environment = body.environment?.trim();
   if (!environment) throw createError({ statusCode: 400, statusMessage: "missing_environment" });
-  const siteId = body.scope === "global" ? "*" : session.siteId;
+  const siteId = body.scope === "global" ? "" : session.siteId;
   const values = body.values ?? {};
   // Refuse une nouvelle URL d'API sans nouveau token (le token enregistré ne doit pas partir ailleurs).
   await resolveCandidate(session.siteId, values);
@@ -28,14 +27,15 @@ export default defineEventHandler(async (event) => {
   for (const key of EDITABLE_KEYS) {
     const raw = typeof values[key] === "string" ? values[key]!.trim() : "";
     if (!raw) continue;
-    const value = key === "onestock_token" ? encryptSetting(raw) : key === "onestock_api_root" ? normalizeApiRoot(raw) : raw;
+    // Le token est chiffré par writeSetting (ou par l'API Settings).
+    const value = key === "onestock_api_root" ? normalizeApiRoot(raw) : raw;
     try {
       saved.push({ key, result: await writeSetting(key, value, siteId, environment) });
     } catch (err) {
       console.error("[settings] write failed", key, err);
       throw createError({
         statusCode: 500,
-        statusMessage: `database_error: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300),
+        statusMessage: `settings_write_error: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300),
         data: { saved },
       });
     }

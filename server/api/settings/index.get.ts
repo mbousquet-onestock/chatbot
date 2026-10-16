@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { requireSession } from "../../utils/session";
-import { DEFAULT_STOCK_REQUEST_NAME, databaseUrl, diagnoseSettings, readSettingsRows, type SettingDiagnosticRow } from "../../utils/settings";
+import { DEFAULT_STOCK_REQUEST_NAME, databaseUrl, diagnoseSettings, readSettingsRows, settingsApi, settingsSource, type SettingDiagnosticRow } from "../../utils/settings";
 import { onestockRequest } from "../../utils/onestock";
 
 /** Une ligne de l'onglet Paramètres. Les secrets ne sont jamais renvoyés : seulement leur présence. */
@@ -38,10 +38,23 @@ function envEntry(name: string, opts: { required?: boolean; secret?: boolean; de
   };
 }
 
+/** Détail du test OneStock : statut, message d'erreur de l'API et environment des settings utilisés. */
+function onestockDetail(r: { status: number; data: unknown }, ms: number, environment?: string) {
+  const msg = typeof r.data === "object" && r.data ? (r.data as { message?: unknown }).message : undefined;
+  return [`HTTP ${r.status}`, typeof msg === "string" ? msg : "", environment ? `environment ${environment}` : "", `${ms} ms`]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Portée affichée d'une ligne : site (ou « global ») et extension_id. */
+const scopeOf = (r: { site_id: string; extension_id: string; environment: string }) =>
+  `${r.site_id || "global"} · ${r.extension_id || "*"} · ${r.environment || "-"}`;
+
 async function timed<T>(fn: () => Promise<T>): Promise<{ ms: number; result?: T; error?: string }> {
   const start = Date.now();
   try {
-    return { ms: Date.now() - start, result: await fn() };
+    const result = await fn();
+    return { ms: Date.now() - start, result };
   } catch (err) {
     return { ms: Date.now() - start, error: err instanceof Error ? err.message : String(err) };
   }
@@ -53,14 +66,19 @@ export default defineEventHandler(async (event) => {
   const model = env("OPENAI_MODEL") ?? "gpt-4o";
   const allowedSites = csv("ALLOWED_SITE_IDS");
 
+  const source = settingsSource();
+  const viaApi = source === "api";
   const environment: ConfigEntry[] = [
+    envEntry("SETTINGS_API_URL", { required: !databaseUrl() }),
+    envEntry("SETTINGS_API_KEY", { required: !databaseUrl(), secret: true }),
+    envEntry("SETTINGS_EXTENSION_ID", { defaultValue: "*" }),
     {
-      ...envEntry("DATABASE_URL", { required: true, secret: true }),
+      ...envEntry("DATABASE_URL", { required: !settingsApi(), secret: true }),
       set: !!databaseUrl(),
-      note: !env("DATABASE_URL") && env("POSTGRES_URL") ? "POSTGRES_URL" : undefined,
+      note: viaApi && databaseUrl() ? "unused-api" : !env("DATABASE_URL") && env("POSTGRES_URL") ? "POSTGRES_URL" : undefined,
     },
-    envEntry("SETTINGS_ENCRYPTION_KEY", { required: true, secret: true }),
-    envEntry("ONESTOCK_ENVIRONMENT", { note: env("ONESTOCK_ENVIRONMENT") ? undefined : "all" }),
+    envEntry("SETTINGS_ENCRYPTION_KEY", { required: source === "database", secret: true }),
+    envEntry("ONESTOCK_ENVIRONMENT", { note: env("ONESTOCK_ENVIRONMENT") ? undefined : "auto" }),
     envEntry("EXTENSION_ID"),
     {
       ...envEntry("ALLOWED_SITE_IDS"),
@@ -74,18 +92,19 @@ export default defineEventHandler(async (event) => {
     envEntry("FRAME_ANCESTORS", { defaultValue: "'self' https://*.onestock-retail.com https://*.onestock-retail.dev" }),
   ];
   // Variables de développement local, affichées seulement si elles sont utilisées (pas de base).
-  if (!databaseUrl() && (env("ONESTOCK_API_ROOT") || env("ONESTOCK_TOKEN"))) {
+  if (source === "env") {
     environment.push(envEntry("ONESTOCK_API_ROOT"), envEntry("ONESTOCK_TOKEN", { secret: true }));
   }
 
   const checks: Check[] = [];
 
-  // Table settings pour le site de la session
+  // Table settings pour le site de la session (API Settings ou base)
   const db = await timed(() => readSettingsRows(session.siteId));
   const settings: ConfigEntry[] = [];
+  const sourceCheck = viaApi ? "settings_api" : "database";
   if (db.result) {
     const { rows, fromEnv } = db.result;
-    checks.push({ name: "database", ok: true, detail: fromEnv ? "env-fallback" : `${db.ms} ms` });
+    checks.push({ name: sourceCheck, ok: true, detail: fromEnv ? "env-fallback" : `${db.result.loaded.all.length} · ${db.ms} ms` });
     const token = rows.find((r) => r.key === "onestock_token");
     const apiRoot = rows.find((r) => r.key === "onestock_api_root");
     const stockView = rows.find((r) => r.key === "onestock_stock_request_name");
@@ -97,7 +116,7 @@ export default defineEventHandler(async (event) => {
         required: true,
         secret: true,
         set: !!token,
-        note: token ? `${token.encrypted ? "encrypted" : "plain"}|${token.site_id || "*"}` : undefined,
+        note: token ? `${token.encrypted ? "encrypted" : "plain"}|${scopeOf(token)}` : undefined,
       },
       {
         name: "onestock_api_root",
@@ -106,7 +125,7 @@ export default defineEventHandler(async (event) => {
         secret: false,
         set: !!apiRoot,
         value: apiRoot?.value,
-        note: apiRoot ? `|${apiRoot.site_id || "*"}` : undefined,
+        note: apiRoot ? `|${scopeOf(apiRoot)}` : undefined,
       },
       {
         name: "onestock_stock_request_name",
@@ -115,7 +134,7 @@ export default defineEventHandler(async (event) => {
         secret: false,
         set: !!stockView,
         value: stockView?.value ?? DEFAULT_STOCK_REQUEST_NAME,
-        note: stockView ? `|${stockView.site_id || "*"}` : "default",
+        note: stockView ? `|${scopeOf(stockView)}` : "default",
       },
       {
         name: "default_lang",
@@ -124,23 +143,19 @@ export default defineEventHandler(async (event) => {
         secret: false,
         set: !!defaultLang,
         value: defaultLang?.value ?? "fr",
-        note: defaultLang ? `|${defaultLang.site_id || "*"}` : "default",
+        note: defaultLang ? `|${scopeOf(defaultLang)}` : "default",
       },
     );
   } else {
-    checks.push({ name: "database", ok: false, detail: db.error ?? "" });
+    checks.push({ name: sourceCheck, ok: false, detail: source ? db.error ?? "" : "no-source" });
   }
 
   // Toutes les lignes de la table pour ces clés (sans valeur) et test du déchiffrement du token.
   let rows: SettingDiagnosticRow[] = [];
   if (db.result && !db.result.fromEnv) {
-    const diag = await timed(() => diagnoseSettings(session.siteId));
-    if (diag.result) {
-      rows = diag.result.rows;
-      checks.push({ name: "decrypt", ok: diag.result.decrypt === "ok", detail: diag.result.decrypt });
-    } else {
-      checks.push({ name: "decrypt", ok: false, detail: diag.error ?? "" });
-    }
+    const diag = diagnoseSettings(db.result.loaded);
+    rows = diag.rows;
+    checks.push({ name: "decrypt", ok: diag.decrypt === "ok", detail: diag.decrypt });
   }
 
   // API OneStock : une recherche d'une seule commande valide l'URL et le token.
@@ -153,7 +168,7 @@ export default defineEventHandler(async (event) => {
     );
     checks.push(
       os.result
-        ? { name: "onestock", ok: os.result.ok, detail: `HTTP ${os.result.status} · ${os.ms} ms` }
+        ? { name: "onestock", ok: os.result.ok, detail: onestockDetail(os.result, os.ms, db.result?.loaded.environment) }
         : { name: "onestock", ok: false, detail: os.error ?? "" },
     );
   } else {
@@ -173,11 +188,13 @@ export default defineEventHandler(async (event) => {
   }
 
   return {
+    source: source ?? null,
+    environment_used: db.result?.loaded.environment ?? null,
     session: { site_id: session.siteId, user_id: session.userId, extension_id: session.extensionId },
     environment,
     settings,
     checks,
     rows,
-    edit: { enabled: !!env("SETTINGS_ADMIN_PASSWORD"), environment: env("ONESTOCK_ENVIRONMENT") ?? rows.find((r) => r.status === "used")?.environment ?? "" },
+    edit: { enabled: !!env("SETTINGS_ADMIN_PASSWORD"), environment: db.result?.loaded.environment ?? "" },
   };
 });

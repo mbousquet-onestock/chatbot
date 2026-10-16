@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import OpenAI from "openai";
 import { onestockRequest } from "./onestock";
-import { databaseUrl, getOnestockSettings, normalizeApiRoot, pingDatabase, DEFAULT_STOCK_REQUEST_NAME } from "./settings";
+import { getOnestockSettings, normalizeApiRoot, pingSettingsSource, settingsSource, DEFAULT_STOCK_REQUEST_NAME } from "./settings";
 
 /** Valeurs saisies dans l'onglet Paramètres (champ vide = valeur actuelle conservée). */
 export interface SettingsFormValues {
@@ -12,7 +12,7 @@ export interface SettingsFormValues {
 }
 
 export interface ConnectionTest {
-  name: "database" | "onestock" | "stock_view" | "default_lang" | "openai";
+  name: "settings_api" | "database" | "onestock" | "stock_view" | "default_lang" | "openai";
   ok: boolean;
   detail: string;
 }
@@ -59,10 +59,11 @@ export async function testConnections(siteId: string, values: SettingsFormValues
   const c = await resolveCandidate(siteId, values);
   const tests: ConnectionTest[] = [];
 
+  const source = settingsSource();
   tests.push({
-    name: "database",
-    ...(databaseUrl()
-      ? await timed(async () => ({ ok: true, detail: `settings : ${await pingDatabase()} ligne(s)` }))
+    name: source === "api" ? "settings_api" : "database",
+    ...(source === "api" || source === "database"
+      ? await timed(async () => ({ ok: true, detail: `settings : ${(await pingSettingsSource()).count}` }))
       : { ok: false, detail: "missing-database" }),
   });
 
