@@ -20,7 +20,6 @@ interface SettingsReport {
   checks: Check[];
   /** Toutes les lignes onestock_token / onestock_api_root de la table, sans valeur. */
   rows?: { key: string; site_id: string; extension_id?: string; environment: string; encrypted: boolean; empty: boolean; status: string }[];
-  edit?: { enabled: boolean; environment: string };
 }
 
 const props = defineProps<{ lang?: string }>();
@@ -58,7 +57,6 @@ function noteText(e: ConfigEntry): string {
   const n = e.note;
   if (!n) return "";
   if (n === "default") return t.value.defaultValue;
-  if (n === "edit-disabled") return t.value.editDisabled;
   if (n === "POSTGRES_URL") return "POSTGRES_URL";
   if (n === "auto") return t.value.allEnvironments;
   if (n === "unused-api") return t.value.unusedApi;
@@ -79,15 +77,6 @@ const warn = (e: ConfigEntry) =>
   (e.name === "ALLOWED_SITE_IDS" && (!e.set || e.note?.endsWith("not-current"))) ||
   (e.name === "onestock_token" && e.note?.startsWith("plain"));
 
-const currentValues = computed(() => {
-  const get = (name: string) => report.value?.settings.find((e) => e.name === name);
-  return {
-    apiRoot: get("onestock_api_root")?.value,
-    stockRequestName: get("onestock_stock_request_name")?.set ? get("onestock_stock_request_name")?.value : undefined,
-    defaultLang: get("default_lang")?.set ? get("default_lang")?.value : undefined,
-    tokenSet: !!get("onestock_token")?.set,
-  };
-});
 
 const checkDetail = (c: Check) =>
   t.value.errors[c.detail] ?? (c.detail === "env-fallback" ? t.value.envFallback : c.name === "decrypt" && c.detail === "ok" ? "" : c.detail);
@@ -109,15 +98,6 @@ const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_ex
     </div>
 
     <template v-if="report">
-      <SettingsEditor
-        :key="report.session.site_id"
-        :lang="lang"
-        :site-id="report.session.site_id"
-        :current="currentValues"
-        :edit-enabled="!!report.edit?.enabled"
-        :environment="report.edit?.environment ?? ''"
-        @saved="load"
-      />
 
       <section>
         <h2 class="os-label-l">{{ t.session }}</h2>

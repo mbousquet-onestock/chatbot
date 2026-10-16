@@ -1,6 +1,5 @@
 import { neon } from "@neondatabase/serverless";
 import { decryptSetting } from "../lib/settings-secrets.mjs";
-import { encryptSetting } from "./encrypt";
 
 /**
  * Configuration OneStock d'un site, lue dans la table `settings` de l'application Extensions : par l'API Settings
@@ -257,76 +256,6 @@ export function diagnoseSettings(loaded: LoadedSettings): { rows: SettingDiagnos
     }
   }
   return { rows, decrypt };
-}
-
-/** Vérifie que la source répond (nombre de lignes `onestock_api_root` visibles). */
-export async function pingSettingsSource(): Promise<{ source: SettingsSource; count: number }> {
-  const source = settingsSource();
-  if (source === "api") {
-    const d = await settingsApiFetch(`?${new URLSearchParams({ key: "onestock_api_root", limit: "1000" })}`);
-    return { source, count: typeof d.count === "number" ? d.count : Array.isArray(d.settings) ? d.settings.length : 0 };
-  }
-  if (source === "database") {
-    const rows = (await sql()`SELECT count(*)::int AS n FROM settings`) as { n: number }[];
-    return { source, count: rows[0]?.n ?? 0 };
-  }
-  throw new Error("No settings source: set SETTINGS_API_URL + SETTINGS_API_KEY (or DATABASE_URL)");
-}
-
-/** Clés modifiables depuis l'onglet Paramètres. */
-export const EDITABLE_KEYS = ["onestock_api_root", "onestock_token", "onestock_stock_request_name", "default_lang"] as const;
-export type EditableKey = (typeof EDITABLE_KEYS)[number];
-
-/** Vide le cache de configuration (après un enregistrement). */
-export function clearSettingsCache() {
-  cache.clear();
-}
-
-let dbColumns: Promise<Set<string>> | undefined;
-const settingsColumns = () =>
-  (dbColumns ??= (sql()`SELECT column_name FROM information_schema.columns WHERE table_name = 'settings'` as unknown as Promise<{ column_name: string }[]>)
-    .then((rows) => new Set(rows.map((r) => r.column_name))));
-
-/**
- * Enregistre une valeur en clair pour (key, site_id, extension_id, environment) : mise à jour, sinon création.
- * `siteId` vide = valeur globale. Par l'API Settings, le token est chiffré par l'application Extensions ; en base,
- * il est chiffré ici (enc:v1:).
- */
-export async function writeSetting(
-  key: EditableKey,
-  value: string,
-  siteId: string,
-  environment: string,
-): Promise<"updated" | "inserted"> {
-  const extensionId = settingsExtensionId() ?? "*";
-  if (settingsApi()) {
-    const qs = new URLSearchParams({ key, site_id: siteId, extension_id: extensionId, environment, upsert: "1" });
-    const res = await fetch(`${settingsApi()!.url}/item?${qs}`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${settingsApi()!.key}`, "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ value }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) throw new Error(`Settings API HTTP ${res.status}: ${data.error ?? res.statusText}`);
-    return res.status === 201 ? "inserted" : "updated";
-  }
-
-  const stored = key === "onestock_token" ? encryptSetting(value) : value;
-  const hasExtension = (await settingsColumns()).has("extension_id");
-  const ext = hasExtension ? extensionId : null;
-  const updated = (await sql()`
-    UPDATE settings SET value = ${stored}
-    WHERE key = ${key} AND coalesce(site_id, '') = ${siteId} AND environment = ${environment}
-      AND (${ext}::text IS NULL OR extension_id = ${ext})
-    RETURNING key`) as unknown[];
-  if (updated.length) return "updated";
-  if (hasExtension) {
-    await sql()`INSERT INTO settings (key, value, site_id, extension_id, environment) VALUES (${key}, ${stored}, ${siteId}, ${extensionId}, ${environment})`;
-  } else {
-    await sql()`INSERT INTO settings (key, value, site_id, environment) VALUES (${key}, ${stored}, ${siteId}, ${environment})`;
-  }
-  return "inserted";
 }
 
 /** Configuration OneStock en clair d'un site, gardée 5 min en cache mémoire. */

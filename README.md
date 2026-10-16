@@ -124,37 +124,20 @@ Variables d'environnement (voir `.env.example`) :
 | `OPENAI_API_KEY` | Clé API OpenAI |
 | `OPENAI_MODEL` | *Optionnel.* Défaut `gpt-4o` |
 | `FRAME_ANCESTORS` | *Optionnel.* Origines autorisées à intégrer l'iframe (défaut : domaines OneStock) |
-| `SETTINGS_ADMIN_PASSWORD` | *Optionnel.* Mot de passe demandé pour enregistrer les paramètres depuis l'onglet Paramètres (sans elle : enregistrement désactivé) |
 
 ### Onglet « Paramètres »
 
 L'interface a deux onglets : **Assistant** et **Paramètres**. L'onglet Paramètres (`GET /api/settings`,
-accessible à tout utilisateur de l'extension) affiche :
+lecture seule, accessible à tout utilisateur de l'extension) affiche :
 
 - le contexte : site, utilisateur et extension reçus de OneStock ;
-- les connexions testées : base de données, API OneStock (recherche d'une commande) et API OpenAI (lecture du
+- les connexions testées : API Settings (ou base de données), API OneStock (recherche d'une commande) et API OpenAI (lecture du
   modèle, sans consommer de tokens) ;
 - les lignes `onestock_token` / `onestock_api_root` retenues dans `settings` pour le site (portée, chiffrement) ;
 - chaque variable d'environnement : définie, manquante ou valeur par défaut.
 
 Les secrets ne sont jamais renvoyés au navigateur : seule leur présence est indiquée. Pour `ALLOWED_SITE_IDS`, l'onglet indique seulement le nombre de sites et si le site
-courant en fait partie. Les variables d'environnement se modifient dans Vercel (puis redéploiement).
-
-#### Saisie et test des paramètres OneStock
-
-Le bloc « Configuration OneStock » permet de saisir `onestock_api_root`, `onestock_token`,
-`onestock_stock_request_name` (vue de stock, défaut `detailed`) et `default_lang` :
-
-- **Tester les connexions** (`POST /api/settings/test`) teste les valeurs saisies, sans rien enregistrer : API
-  Settings (ou base), API OneStock (URL + token), vue de stock (`/v1/stock_export`), langue par défaut (`/v3/items`) et API
-  OpenAI. Un champ vide reprend la valeur enregistrée.
-- **Enregistrer** (`PUT /api/settings`) écrit uniquement les valeurs modifiées, pour tous les sites (`site_id`
-  vide = global) ou le site courant, avec `extension_id = SETTINGS_EXTENSION_ID` (défaut `*`) et l'`environment`
-  indiqué, par `PUT …/api/settings/item?upsert=1` de l'API Settings (qui chiffre le token). En accès direct à la
-  base, le token est chiffré ici (`enc:v1:`) avec `SETTINGS_ENCRYPTION_KEY`.
-- L'enregistrement exige `SETTINGS_ADMIN_PASSWORD` (défini dans Vercel) ; sans cette variable il est désactivé.
-- Si l'URL de l'API change, le token doit être ressaisi : le token enregistré n'est jamais envoyé à une autre adresse.
-- Le token enregistré n'est jamais renvoyé au navigateur.
+courant en fait partie. Les variables d'environnement se modifient dans Vercel (puis redéploiement), les valeurs OneStock dans l'application Extensions.
 
 #### Lecture des settings
 
