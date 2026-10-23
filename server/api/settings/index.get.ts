@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { requireSession } from "../../utils/session";
-import { DEFAULT_STOCK_REQUEST_NAME, databaseUrl, diagnoseSettings, readParentUrlCredentials, readSettingsRows, settingsApi, settingsSource, type SettingDiagnosticRow } from "../../utils/settings";
+import { DEFAULT_STOCK_REQUEST_NAME, parseSalesChannels, databaseUrl, diagnoseSettings, readParentUrlCredentials, readSettingsRows, settingsApi, settingsSource, type SettingDiagnosticRow } from "../../utils/settings";
 import { currentApiContext } from "../../utils/apiContext";
 import { onestockRequest } from "../../utils/onestock";
 
@@ -109,6 +109,8 @@ export default defineEventHandler(async (event) => {
     const apiRoot = rows.find((r) => r.key === "onestock_api_root");
     const stockView = rows.find((r) => r.key === "onestock_stock_request_name");
     const defaultLang = rows.find((r) => r.key === "default_lang");
+    const salesChannels = rows.find((r) => r.key === "sales_channels_by_country");
+    const channelMap = parseSalesChannels(salesChannels?.value);
     settings.push(
       {
         name: "onestock_token",
@@ -144,6 +146,18 @@ export default defineEventHandler(async (event) => {
         set: !!defaultLang,
         value: defaultLang?.value ?? "fr",
         note: defaultLang ? `|${scopeOf(defaultLang)}` : "default",
+      },
+      {
+        name: "sales_channels_by_country",
+        source: "settings",
+        required: false,
+        secret: false,
+        set: !!salesChannels,
+        // Pays → canal (« * » = autres pays) ; sans ligne, OneStock applique le canal par défaut du site.
+        value: Object.keys(channelMap).length
+          ? Object.entries(channelMap).sort(([a], [b]) => (a === "*" ? 1 : b === "*" ? -1 : a.localeCompare(b))).map(([c, sc]) => `${c} → ${sc}`).join(" · ")
+          : undefined,
+        note: salesChannels ? (Object.keys(channelMap).length ? `|${scopeOf(salesChannels)}` : "invalid-sales-channels") : "default-sales-channel",
       },
     );
   } else {

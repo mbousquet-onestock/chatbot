@@ -228,6 +228,12 @@ Sinon, ils sont lus directement dans la table (`DATABASE_URL`). Pour chaque clé
 
 L'onglet Paramètres liste toutes les lignes avec la raison pour laquelle chacune est utilisée ou ignorée.
 
+`sales_channels_by_country` (facultative) donne le canal de vente des commandes créées par l'assistant
+(`create_order`) selon le pays de livraison : pays de l'adresse du client (livraison à domicile) ou du magasin de
+retrait (réservation, retrait en magasin). Format JSON `{"FR": "sc_fr", "BE": "sc_be", "*": "sc_web"}` ou liste
+`FR:sc_fr, BE:sc_be, *:sc_web` ; `*` s'applique aux autres pays. Sans ligne (ou sans pays correspondant ni `*`),
+OneStock applique le canal par défaut du site. Un canal imposé explicitement par l'utilisateur reste prioritaire.
+
 `onestock_stock_request_name` (facultative) est la vue de stock OneStock (OMC > Configuration > Stock > Stock
 Queries) utilisée pour consulter le stock ; sans ligne dans `settings`, la vue `detailed` est utilisée. `default_lang` (facultative) est la langue des fiches
 articles quand celle de l'utilisateur n'est pas disponible (puis français). Pour

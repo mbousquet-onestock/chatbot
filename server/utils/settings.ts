@@ -13,9 +13,42 @@ export interface OnestockSettings {
   stockRequestName: string;
   /** Langue par défaut du site (clé `default_lang`), pour les caractéristiques des articles ; facultative. */
   defaultLang?: string;
+  /** Canal de vente par pays de livraison (clé `sales_channels_by_country`, « * » = autres pays). */
+  salesChannels: Record<string, string>;
 }
 
-const KEYS = ["onestock_token", "onestock_api_root", "onestock_stock_request_name", "default_lang"] as const;
+const KEYS = ["onestock_token", "onestock_api_root", "onestock_stock_request_name", "default_lang", "sales_channels_by_country"] as const;
+
+/**
+ * Canaux de vente par pays de livraison (`sales_channels_by_country`) : objet JSON {"FR": "sc_fr", "*": "sc_web"}
+ * ou liste « FR:sc_fr, BE:sc_be, *:sc_web ». Les codes pays (ISO 3166-1 alpha-2) sont mis en majuscules ; « * »
+ * s'applique aux autres pays. Une valeur illisible donne un objet vide.
+ */
+export function parseSalesChannels(raw: string | null | undefined): Record<string, string> {
+  const text = raw?.trim();
+  if (!text) return {};
+  let entries: [string, unknown][] = [];
+  if (text.startsWith("{")) {
+    try {
+      const obj = JSON.parse(text);
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) entries = Object.entries(obj);
+    } catch {
+      return {};
+    }
+  } else {
+    entries = text.split(/[,;\n]/).map((part) => part.split(/[:=]/).map((s) => s.trim()) as [string, string]).filter(([k, v]) => k && v);
+  }
+  return Object.fromEntries(
+    entries
+      .filter(([k, v]) => typeof v === "string" && v.trim() && (/^[a-z]{2}$/i.test(k.trim()) || k.trim() === "*"))
+      .map(([k, v]) => [k.trim() === "*" ? "*" : k.trim().toUpperCase(), String(v).trim()]),
+  );
+}
+
+/** Canal de vente pour un pays de livraison (sinon celui de « * », sinon aucun : canal par défaut du site). */
+export function salesChannelFor(channels: Record<string, string>, countryCode: string | undefined): string | undefined {
+  return (countryCode && channels[countryCode.toUpperCase()]) || channels["*"] || undefined;
+}
 
 /** Vue de stock utilisée quand `onestock_stock_request_name` n'est pas renseignée dans la table settings. */
 export const DEFAULT_STOCK_REQUEST_NAME = "detailed";
@@ -344,6 +377,7 @@ export async function getOnestockSettings(siteId: string): Promise<OnestockSetti
       apiRoot: normalizeApiRoot(creds.apiRoot),
       stockRequestName: loaded?.used.get("onestock_stock_request_name")?.value?.trim() || DEFAULT_STOCK_REQUEST_NAME,
       defaultLang: loaded?.used.get("default_lang")?.value?.trim() || undefined,
+      salesChannels: parseSalesChannels(loaded?.used.get("sales_channels_by_country")?.value),
     };
     cache.set(cacheKey, { at: Date.now(), value });
     return value;
@@ -382,7 +416,8 @@ export async function getOnestockSettings(siteId: string): Promise<OnestockSetti
   if (!plain) throw createError({ statusCode: 500, statusMessage: "onestock_token is empty" });
   const stockRequestName = loaded.used.get("onestock_stock_request_name")?.value?.trim() || DEFAULT_STOCK_REQUEST_NAME;
   const defaultLang = loaded.used.get("default_lang")?.value?.trim() || undefined;
-  const value = { token: plain, apiRoot: normalizeApiRoot(apiRoot), stockRequestName, defaultLang };
+  const salesChannels = parseSalesChannels(loaded.used.get("sales_channels_by_country")?.value);
+  const value = { token: plain, apiRoot: normalizeApiRoot(apiRoot), stockRequestName, defaultLang, salesChannels };
   cache.set(cacheKey, { at: Date.now(), value });
   return value;
 }

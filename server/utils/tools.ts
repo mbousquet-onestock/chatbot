@@ -2,7 +2,7 @@ import type OpenAI from "openai";
 import { missingAddressParts, sameAddress } from "./addresses";
 import { toOnestockDate } from "./dates";
 import { encodeId, onestockRequest, type OnestockResult } from "./onestock";
-import { getOnestockSettings } from "./settings";
+import { getOnestockSettings, salesChannelFor } from "./settings";
 import { contextQuery } from "./apiContext";
 import { checkCall, describeOperation, findOperations, listCategories, matchOperation, safeConcretePath } from "./apiCatalog";
 
@@ -226,6 +226,16 @@ function toOnestockAddress(a: Input | undefined): Record<string, unknown> | unde
     regions: a.country_code ? { country: { code: String(a.country_code).toUpperCase() } } : undefined,
     contact: a.contact,
   });
+}
+
+/** Pays de livraison : celui de l'adresse (livraison à domicile) ou du magasin de retrait (lu chez OneStock). */
+async function deliveryCountry(siteId: string, mode: string, input: Input): Promise<string | undefined> {
+  if (mode === "home_delivery") return input.delivery_address?.country_code ? String(input.delivery_address.country_code).toUpperCase() : undefined;
+  if (!input.endpoint_id) return undefined;
+  const res = await onestockRequest(siteId, "GET", `/v3/endpoints/${encodeId(String(input.endpoint_id))}`, { fields: ["id", "address"] });
+  const e = ((res.data as Input)?.endpoint ?? res.data) as Input | undefined;
+  const code = res.ok ? e?.address?.regions?.country?.code : undefined;
+  return code ? String(code).toUpperCase() : undefined;
 }
 
 /** Mode de création de commande (réservation en magasin par défaut). */
@@ -1087,7 +1097,10 @@ export const TOOLS: Record<string, ToolSpec> = {
           customer: { ...contactSchema, description: "Client : nom, prénom, et email ou téléphone." },
           delivery_address: { ...addressSchema, description: "Adresse de livraison (home_delivery uniquement)." },
           currency: { type: "string", description: "Devise ISO 4217. Défaut : EUR." },
-          sales_channel: { type: "string", description: "Canal de vente (défaut : celui du site)." },
+          sales_channel: {
+            type: "string",
+            description: "Canal de vente, seulement si l'utilisateur l'impose. Sinon, il est choisi selon le pays de livraison (sales_channels_by_country de la table settings).",
+          },
           id_format: { type: "string", description: "Format d'identifiant de commande configuré chez OneStock (facultatif)." },
         },
         required: ["items", "customer"],
@@ -1140,6 +1153,9 @@ export const TOOLS: Record<string, ToolSpec> = {
         ? { address: toOnestockAddress({ ...input.delivery_address, contact: input.delivery_address?.contact ?? customer }) }
         : { endpoint_id: String(input.endpoint_id) };
       const types = mode === "reservation" ? ["ropis"] : mode === "click_and_collect" ? ["ffs", "ckc"] : ["ffs"];
+      // Canal de vente : imposé par l'utilisateur, sinon celui du pays de livraison (adresse du client ou du magasin).
+      const country = await deliveryCountry(siteId, mode, input);
+      const salesChannel = input.sales_channel || salesChannelFor((await getOnestockSettings(siteId)).salesChannels, country);
       const res = await onestockRequest(siteId, "POST", "/v3/orders", compact({
         id_format: input.id_format || undefined,
         order: compact({
@@ -1148,7 +1164,7 @@ export const TOOLS: Record<string, ToolSpec> = {
           delivery: { destination },
           order_items: orderItems,
           pricing_details: { currency, price: round(orderItems.reduce((sum, i) => sum + i.pricing_details.price, 0)) },
-          sales_channel: input.sales_channel || undefined,
+          sales_channel: salesChannel || undefined,
         }),
       }));
       if (!res.ok) return res;
@@ -1156,7 +1172,7 @@ export const TOOLS: Record<string, ToolSpec> = {
       const orderId = String(data?.id ?? data?.order?.id ?? data?.order_id ?? "");
       return {
         ...res,
-        data: { created: true, order_id: orderId || undefined, mode, response: data },
+        data: { created: true, order_id: orderId || undefined, mode, delivery_country: country, sales_channel: salesChannel ?? "default", response: data },
         notice: { code: "order_created", order_id: orderId, order_mode: mode },
       };
     },

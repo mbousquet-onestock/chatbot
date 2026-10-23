@@ -59,6 +59,8 @@ function noteText(e: ConfigEntry): string {
   if (n === "default") return t.value.defaultValue;
   if (n === "POSTGRES_URL") return "POSTGRES_URL";
   if (n === "auto") return t.value.allEnvironments;
+  if (n === "default-sales-channel") return t.value.defaultSalesChannel;
+  if (n === "invalid-sales-channels") return t.value.invalidSalesChannels;
   if (n === "unused-api") return t.value.unusedApi;
   if (e.name === "ALLOWED_SITE_IDS") {
     const [count, current] = n.split("|");
@@ -75,7 +77,8 @@ function noteText(e: ConfigEntry): string {
 
 const warn = (e: ConfigEntry) =>
   (e.name === "ALLOWED_SITE_IDS" && (!e.set || e.note?.endsWith("not-current"))) ||
-  (e.name === "onestock_token" && e.note?.startsWith("plain"));
+  (e.name === "onestock_token" && e.note?.startsWith("plain")) ||
+  e.note === "invalid-sales-channels";
 
 
 const checkDetail = (c: Check) =>
