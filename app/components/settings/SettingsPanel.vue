@@ -13,7 +13,14 @@ interface Check {
   ok: boolean;
   detail: string;
 }
+interface CurrentEnvironment {
+  kind: string | null;
+  host: string | null;
+  settings_environment: string | null;
+  source: "parent_url" | "ONESTOCK_ENVIRONMENT" | "onestock_api_root" | null;
+}
 interface SettingsReport {
+  current_environment?: CurrentEnvironment;
   session: { site_id: string; user_id: string; extension_id: string; parent_url?: string | null; api_root?: string | null; api_root_source?: string };
   environment: ConfigEntry[];
   settings: ConfigEntry[];
@@ -81,6 +88,10 @@ const warn = (e: ConfigEntry) =>
   e.note === "invalid-sales-channels";
 
 
+const envColor = (kind: string | null) => (kind === "prod" ? "red" : kind === "qualif" ? "orange" : kind ? "blue" : "grey");
+const envLabel = (kind: string | null) => (kind ? t.value.envKinds[kind] ?? kind : t.value.envUnknown);
+const envSource = (s: CurrentEnvironment["source"]) => (s ? t.value.envSources[s] : t.value.envUnknown);
+
 const checkDetail = (c: Check) =>
   t.value.errors[c.detail] ?? (c.detail === "env-fallback" ? t.value.envFallback : c.name === "decrypt" && c.detail === "ok" ? "" : c.detail);
 const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_extension: "grey", other_environment: "orange" } as const;
@@ -101,6 +112,20 @@ const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_ex
     </div>
 
     <template v-if="report">
+
+      <section v-if="report.current_environment">
+        <h2 class="os-label-l">{{ t.currentEnvironment }}</h2>
+        <OsCardLayout class="env">
+          <OsBadge type="primary" :color="envColor(report.current_environment.kind)" :text="envLabel(report.current_environment.kind)" />
+          <div class="env-info">
+            <span class="os-body-l mono">{{ report.current_environment.host ?? "—" }}</span>
+            <span class="os-body-s os-text-secondary">
+              settings.environment : <strong>{{ report.current_environment.settings_environment ?? "—" }}</strong>
+              · {{ t.envSourceLabel }} : {{ envSource(report.current_environment.source) }}
+            </span>
+          </div>
+        </OsCardLayout>
+      </section>
 
       <section>
         <h2 class="os-label-l">{{ t.session }}</h2>
@@ -172,6 +197,8 @@ const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_ex
 .loading { display: flex; flex-direction: column; gap: var(--os-spacing-m); }
 section { display: flex; flex-direction: column; gap: var(--os-spacing-m); }
 h2 { margin: 0; }
+.env { display: flex; align-items: center; gap: var(--os-spacing-l); }
+.env-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .grid .wide { grid-column: 1 / -1; overflow-wrap: anywhere; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--os-spacing-l); }
 .rows { display: flex; flex-direction: column; padding: 0; }

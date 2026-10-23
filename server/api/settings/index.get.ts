@@ -47,6 +47,22 @@ function onestockDetail(r: { status: number; data: unknown }, ms: number, enviro
     .join(" · ");
 }
 
+/** Type d'environnement OneStock d'après l'hôte (back-office ou API) : qualif, dev, preprod… sinon prod. */
+function environmentKind(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+  if (host === "localhost" || host === "127.0.0.1") return "local";
+  const named = host.match(/(^|[.-])(qualif|qualification|preprod|staging|recette|uat|test|sandbox|demo)([.-]|$)/);
+  if (named) return named[2] === "qualification" ? "qualif" : named[2];
+  if (host.endsWith(".dev")) return "dev";
+  return "prod";
+}
+
 /** Portée affichée d'une ligne : site (ou « global ») et extension_id. */
 const scopeOf = (r: { site_id: string; extension_id: string; environment: string }) =>
   `${r.site_id || "global"} · ${r.extension_id || "*"} · ${r.environment || "-"}`;
@@ -217,6 +233,20 @@ export default defineEventHandler(async (event) => {
   return {
     source: source ?? null,
     environment_used: db.result?.loaded.environment ?? null,
+    // Environnement en cours : type (qualif, prod…), valeur de settings.environment et origine du choix.
+    current_environment: {
+      kind: environmentKind(byParent ? ctx.parentUrl : null) ?? environmentKind(byParent ? apiRoot.value : settings.find((e) => e.name === "onestock_api_root")?.value) ?? null,
+      host: (() => {
+        const u = byParent ? ctx.parentUrl : settings.find((e) => e.name === "onestock_api_root")?.value;
+        try {
+          return u ? new URL(u).host : null;
+        } catch {
+          return null;
+        }
+      })(),
+      settings_environment: db.result?.loaded.environment ?? null,
+      source: byParent ? "parent_url" : db.result?.loaded.environmentSource === "variable" ? "ONESTOCK_ENVIRONMENT" : db.result?.loaded.environment ? "onestock_api_root" : null,
+    },
     session: {
       site_id: session.siteId,
       user_id: session.userId,
