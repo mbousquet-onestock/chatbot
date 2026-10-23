@@ -11,6 +11,8 @@ export interface ApiContext {
   apiUrl?: string;
   /** parent_url reçu mais écarté (motif). */
   rejected?: string;
+  /** extension_id OneStock de l'extension (contexte) : ses settings propres sont retenus. */
+  extensionId?: string;
 }
 
 const store = new AsyncLocalStorage<ApiContext>();

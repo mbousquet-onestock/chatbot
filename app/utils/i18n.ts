@@ -75,6 +75,8 @@ const fr = {
     envKinds: { prod: "Production", qualif: "Qualification", preprod: "Préproduction", staging: "Staging", recette: "Recette", uat: "Recette (UAT)", test: "Test", sandbox: "Sandbox", demo: "Démo", dev: "Développement", local: "Local" } as Record<string, string>,
     envUnknown: "non déterminé",
     envSourceLabel: "choisi par",
+    envHint: (env: string, ext: string) =>
+      `Réglages de cet environnement : environment = ${env} (ou * pour tous les environnements), extension_id = ${ext || "*"} ou *, site_id = ce site ou vide.`,
     envSources: { parent_url: "parent_url du back-office OneStock", ONESTOCK_ENVIRONMENT: "variable ONESTOCK_ENVIRONMENT", onestock_api_root: "ligne onestock_api_root retenue" } as Record<string, string>,
     apiRoot: "URL de l'API OneStock",
     fromParentUrl: "token et URL du parent_url",
@@ -264,6 +266,8 @@ const en: Dict = {
     envKinds: { prod: "Production", qualif: "Qualification", preprod: "Pre-production", staging: "Staging", recette: "Acceptance", uat: "Acceptance (UAT)", test: "Test", sandbox: "Sandbox", demo: "Demo", dev: "Development", local: "Local" } as Record<string, string>,
     envUnknown: "unknown",
     envSourceLabel: "selected by",
+    envHint: (env: string, ext: string) =>
+      `Settings of this environment: environment = ${env} (or * for all environments), extension_id = ${ext || "*"} or *, site_id = this site or empty.`,
     envSources: { parent_url: "OneStock back-office parent_url", ONESTOCK_ENVIRONMENT: "ONESTOCK_ENVIRONMENT variable", onestock_api_root: "selected onestock_api_root row" } as Record<string, string>,
     apiRoot: "OneStock API URL",
     fromParentUrl: "token and URL of the parent_url",

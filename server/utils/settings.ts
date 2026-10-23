@@ -36,7 +36,11 @@ export function parseSalesChannels(raw: string | null | undefined): Record<strin
       return {};
     }
   } else {
-    entries = text.split(/[,;\n]/).map((part) => part.split(/[:=]/).map((s) => s.trim()) as [string, string]).filter(([k, v]) => k && v);
+    // Séparateurs acceptés : « , ; · » ou retour à la ligne entre pays, « : = → -> » entre pays et canal.
+    entries = text
+      .split(/[,;·\n]/)
+      .map((part) => part.split(/\s*(?:->|→|:|=)\s*/).map((s) => s.trim()) as [string, string])
+      .filter(([k, v]) => k && v);
   }
   return Object.fromEntries(
     entries
@@ -210,25 +214,34 @@ export type RowStatus = "used" | "shadowed" | "other_site" | "other_extension" |
  * - environment : `ONESTOCK_ENVIRONMENT` s'il est défini ; sinon celui de l'`onestock_api_root` retenue, pour que
  *   le token et l'URL viennent toujours du même environment (un token de prod n'est jamais envoyé en qualif).
  */
-export function selectRows(all: StoredSetting[], siteId: string) {
-  const extensionId = settingsExtensionId();
+export function selectRows(all: StoredSetting[], siteId: string, parentOrigin?: string, contextExtensionId?: string) {
+  // Settings propres à l'extension : extension_id du contexte OneStock (saisis depuis « Settings de Chatbot »)
+  // ou SETTINGS_EXTENSION_ID ; « * » = settings généraux.
+  const extensionIds = [settingsExtensionId(), contextExtensionId].filter((x): x is string => !!x);
   const siteOk = (r: StoredSetting) => r.site_id === siteId || isGlobalSite(r.site_id);
-  const extOk = (r: StoredSetting) => isGeneralExtension(r.extension_id) || (!!extensionId && r.extension_id === extensionId);
-  const score = (r: StoredSetting) => (r.site_id === siteId ? 2 : 0) + (isGeneralExtension(r.extension_id) ? 0 : 1);
+  const extOk = (r: StoredSetting) => isGeneralExtension(r.extension_id) || extensionIds.includes(r.extension_id);
+  // environment « * » (ou vide) : valeur commune à tous les environnements, moins prioritaire qu'une valeur propre.
+  const anyEnv = (r: StoredSetting) => r.environment === "" || r.environment === "*";
+  const score = (r: StoredSetting) => (anyEnv(r) ? 0 : 4) + (r.site_id === siteId ? 2 : 0) + (isGeneralExtension(r.extension_id) ? 0 : 1);
   const best = (rows: StoredSetting[]) =>
     rows.reduce<StoredSetting | undefined>((acc, r) => (!acc || score(r) > score(acc) ? r : acc), undefined);
 
   const applicable = all.filter((r) => siteOk(r) && extOk(r));
-  const sameEnv = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  // « https://admin.eu1.qualif.onestock-retail.com » et « admin.eu1.qualif.onestock-retail.com » désignent le même environment.
+  const normEnv = (e: string) => e.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const sameEnv = (a: string, b: string) => normEnv(a) === normEnv(b);
   const hasValue = (x: StoredSetting) => !!(x.value || x.decrypt_error || x.hidden);
   // Sans ONESTOCK_ENVIRONMENT : environment de la meilleure onestock_api_root qui a aussi un token dans le même
   // environment (sinon celui de la meilleure onestock_api_root).
   const roots = applicable.filter((r) => r.key === "onestock_api_root" && r.value).sort((a, b) => score(b) - score(a));
   const withToken = roots.find((root) => applicable.some((t) => t.key === "onestock_token" && hasValue(t) && sameEnv(t.environment, root.environment)));
   const configured = env("ONESTOCK_ENVIRONMENT");
-  const environment = configured ?? (withToken ?? roots[0])?.environment;
-  const environmentSource: "variable" | "api_root" | undefined = configured ? "variable" : environment !== undefined ? "api_root" : undefined;
-  const inEnv = applicable.filter((r) => environment === undefined || sameEnv(r.environment, environment));
+  // Depuis le back-office : l'environment est l'origine du parent_url, dès qu'une ligne y est rangée.
+  const byParent = !configured && !!parentOrigin && applicable.some((r) => sameEnv(r.environment, parentOrigin));
+  const environment = configured ?? (byParent ? parentOrigin : (withToken ?? roots[0])?.environment);
+  const environmentSource: "variable" | "parent_url" | "api_root" | undefined =
+    configured ? "variable" : byParent ? "parent_url" : environment !== undefined ? "api_root" : undefined;
+  const inEnv = applicable.filter((r) => environment === undefined || anyEnv(r) || sameEnv(r.environment, environment));
 
   const used = new Map<string, StoredSetting>();
   for (const key of KEYS) {
@@ -238,7 +251,7 @@ export function selectRows(all: StoredSetting[], siteId: string) {
   const status = (r: StoredSetting): RowStatus =>
     !siteOk(r) ? "other_site"
       : !extOk(r) ? "other_extension"
-        : environment !== undefined && !sameEnv(r.environment, environment) ? "other_environment"
+        : environment !== undefined && !anyEnv(r) && !sameEnv(r.environment, environment) ? "other_environment"
           : used.get(r.key) === r ? "used" : "shadowed";
   return { used, environment, environmentSource, status };
 }
@@ -250,7 +263,7 @@ export interface LoadedSettings {
   used: Map<string, StoredSetting>;
   /** Environment retenu (ONESTOCK_ENVIRONMENT ou celui de l'URL d'API retenue). */
   environment?: string;
-  environmentSource?: "variable" | "api_root";
+  environmentSource?: "variable" | "parent_url" | "api_root";
   status: (r: StoredSetting) => RowStatus;
 }
 
@@ -259,7 +272,8 @@ export async function loadSettings(siteId: string): Promise<LoadedSettings> {
   const source = settingsSource();
   if (!source) throw new Error("No settings source: set SETTINGS_API_URL + SETTINGS_API_KEY (or DATABASE_URL)");
   const all = await fetchAllRows(source);
-  return { source, all, ...selectRows(all, siteId) };
+  const ctx = currentApiContext();
+  return { source, all, ...selectRows(all, siteId, ctx.parentUrl ? new URL(ctx.parentUrl).origin : undefined, ctx.extensionId) };
 }
 
 /** Lignes retenues pour un site (une par clé). */
@@ -315,7 +329,7 @@ export function diagnoseSettings(loaded: LoadedSettings): { rows: SettingDiagnos
     decrypt = tokens.length
       ? `no_token: ${tokens.map((r) => `[site ${r.site_id || "global"} · extension ${r.extension_id || "*"} · environment ${r.environment || "-"} → ${
         !r.value && !r.decrypt_error && !r.hidden ? "empty value" : loaded.status(r).replace(/_/g, " ")
-      }]`).join(" ")}${loaded.environment ? ` · selected environment: ${loaded.environment} (${loaded.environmentSource === "variable" ? "ONESTOCK_ENVIRONMENT" : "from onestock_api_root"})` : ""}`
+      }]`).join(" ")}${loaded.environment ? ` · selected environment: ${loaded.environment} (${loaded.environmentSource === "variable" ? "ONESTOCK_ENVIRONMENT" : loaded.environmentSource === "parent_url" ? "parent_url" : "from onestock_api_root"})` : ""}`
       : "no_token_rows";
   } else {
     try {
@@ -355,7 +369,7 @@ export async function getOnestockSettings(siteId: string): Promise<OnestockSetti
   }
   // Un token par environnement OneStock : le parent_url fait partie de la clé de cache.
   const byParent = !!ctx.parentUrl && !!settingsApi();
-  const cacheKey = byParent ? `parent|${ctx.parentUrl}|${ctx.apiUrl ?? ""}|${siteId}` : `${env("ONESTOCK_ENVIRONMENT") ?? ""}|${siteId}`;
+  const cacheKey = `${byParent ? `parent|${ctx.parentUrl}|${ctx.apiUrl ?? ""}` : env("ONESTOCK_ENVIRONMENT") ?? ""}|${ctx.extensionId ?? ""}|${siteId}`;
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
 

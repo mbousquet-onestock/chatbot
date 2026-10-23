@@ -17,6 +17,7 @@ interface CurrentEnvironment {
   kind: string | null;
   host: string | null;
   settings_environment: string | null;
+  expected_environment?: string | null;
   source: "parent_url" | "ONESTOCK_ENVIRONMENT" | "onestock_api_root" | null;
 }
 interface SettingsReport {
@@ -66,6 +67,7 @@ function noteText(e: ConfigEntry): string {
   if (n === "default") return t.value.defaultValue;
   if (n === "POSTGRES_URL") return "POSTGRES_URL";
   if (n === "auto") return t.value.allEnvironments;
+  if (n === "parent-url") return t.value.fromParentUrl;
   if (n === "default-sales-channel") return t.value.defaultSalesChannel;
   if (n === "invalid-sales-channels") return t.value.invalidSalesChannels;
   if (n === "unused-api") return t.value.unusedApi;
@@ -122,6 +124,9 @@ const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_ex
             <span class="os-body-s os-text-secondary">
               settings.environment : <strong>{{ report.current_environment.settings_environment ?? "—" }}</strong>
               · {{ t.envSourceLabel }} : {{ envSource(report.current_environment.source) }}
+            </span>
+            <span v-if="report.current_environment.expected_environment" class="os-body-s os-text-secondary">
+              {{ t.envHint(report.current_environment.expected_environment, report.session.extension_id) }}
             </span>
           </div>
         </OsCardLayout>

@@ -17,3 +17,8 @@ test("channel for a delivery country, then *, then none (site default)", () => {
   assert.equal(salesChannelFor({ FR: "sc_fr" }, "ES"), undefined);
   assert.equal(salesChannelFor(map, undefined), "sc_web");
 });
+
+test("arrow format as displayed by the Extensions application", () => {
+  assert.deepEqual(parseSalesChannels("US → sc003 · FR → sc001 · * → sc001 · ES → sc002"), { US: "sc003", FR: "sc001", "*": "sc001", ES: "sc002" });
+  assert.deepEqual(parseSalesChannels("US -> sc003, FR->sc001"), { US: "sc003", FR: "sc001" });
+});

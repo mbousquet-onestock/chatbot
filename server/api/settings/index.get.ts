@@ -188,6 +188,11 @@ export default defineEventHandler(async (event) => {
   if (byParent) {
     const creds = await timed(() => readParentUrlCredentials(ctx.parentUrl!, session.siteId, ctx.apiUrl));
     apiRoot = { value: creds.result?.apiRoot, source: "parent_url" };
+    // Token et URL d'API viennent du parent_url (GET /api/settings/token), pas des lignes de la table.
+    for (const e of settings) {
+      if (e.name === "onestock_token") Object.assign(e, { set: !!creds.result?.token, value: undefined, note: creds.result ? "parent-url" : undefined });
+      if (e.name === "onestock_api_root") Object.assign(e, { set: !!creds.result?.apiRoot, value: creds.result?.apiRoot, note: creds.result ? "parent-url" : undefined });
+    }
     checks.push(creds.result
       ? { name: "parent_token", ok: !!creds.result.apiRoot, detail: creds.result.apiRoot ? `${creds.result.apiRoot} · ${creds.ms} ms` : "no api_root" }
       : { name: "parent_token", ok: false, detail: creds.error ?? "" });
@@ -245,7 +250,9 @@ export default defineEventHandler(async (event) => {
         }
       })(),
       settings_environment: db.result?.loaded.environment ?? null,
-      source: byParent ? "parent_url" : db.result?.loaded.environmentSource === "variable" ? "ONESTOCK_ENVIRONMENT" : db.result?.loaded.environment ? "onestock_api_root" : null,
+      source: (({ variable: "ONESTOCK_ENVIRONMENT", parent_url: "parent_url", api_root: "onestock_api_root" }) as Record<string, string>)[db.result?.loaded.environmentSource ?? ""] ?? null,
+      // Environment où ranger les réglages de cet environnement OneStock (origine du parent_url).
+      expected_environment: ctx.parentUrl ? new URL(ctx.parentUrl).origin : null,
     },
     session: {
       site_id: session.siteId,
