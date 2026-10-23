@@ -75,6 +75,8 @@ export interface StoredSetting {
   encrypted: boolean;
   /** L'API Settings n'a pas pu déchiffrer la valeur (mauvaise SETTINGS_ENCRYPTION_KEY côté Extensions). */
   decrypt_error?: boolean;
+  /** Clé sensible dont l'API Settings n'a pas renvoyé la valeur (value null malgré decrypt=1). */
+  hidden?: boolean;
 }
 
 /** Ligne retenue pour une clé (compatibilité : valeur non nulle). */
@@ -113,6 +115,8 @@ function toStored(r: Record<string, unknown>): StoredSetting {
     environment: str(r.environment),
     encrypted: typeof r.encrypted === "boolean" ? r.encrypted : !!value?.startsWith("enc:v1:"),
     ...(r.decrypt_error ? { decrypt_error: true } : {}),
+    // Clé sensible sans valeur : la liste ne l'a pas déchiffrée (relue ensuite ligne par ligne).
+    ...(value == null && !r.decrypt_error && (r.secret === true || /token/.test(str(r.key))) ? { hidden: true } : {}),
   };
 }
 
@@ -122,12 +126,26 @@ async function fetchAllRows(source: SettingsSource): Promise<StoredSetting[]> {
   if (source === "api") {
     const lists = await Promise.all(
       KEYS.map((key) => {
+        // Pas de filtre d'environment ici : selectRows l'applique, et le diagnostic montre les lignes écartées.
         const qs = new URLSearchParams({ key, decrypt: "1", limit: "5000" });
-        if (environment) qs.set("environment", environment);
         return settingsApiFetch(`?${qs}`);
       }),
     );
-    return lists.flatMap((d) => (Array.isArray(d.settings) ? d.settings : []).map((r) => toStored(r as Record<string, unknown>)));
+    const rows = lists.flatMap((d) => (Array.isArray(d.settings) ? d.settings : []).map((r) => toStored(r as Record<string, unknown>)));
+    // Token sans valeur dans la liste : lecture de la ligne exacte par GET /item?decrypt=1.
+    await Promise.all(rows.filter((r) => r.hidden).map(async (r) => {
+      try {
+        const qs = new URLSearchParams({ key: r.key, site_id: r.site_id, extension_id: r.extension_id, environment: r.environment, decrypt: "1" });
+        const item = (await settingsApiFetch(`/item?${qs}`)).setting as Record<string, unknown> | undefined;
+        if (item) {
+          delete r.hidden;
+          Object.assign(r, toStored(item));
+        }
+      } catch (err) {
+        console.warn("[settings] item read failed", r.key, err);
+      }
+    }));
+    return rows;
   }
   if (source === "database") {
     const rows = (await sql()`SELECT * FROM settings WHERE key = ANY(${KEYS as unknown as string[]})`) as Record<string, unknown>[];
@@ -173,7 +191,7 @@ export function selectRows(all: StoredSetting[], siteId: string) {
 
   const used = new Map<string, StoredSetting>();
   for (const key of KEYS) {
-    const r = best(inEnv.filter((x) => x.key === key && (x.value || x.decrypt_error)));
+    const r = best(inEnv.filter((x) => x.key === key && (x.value || x.decrypt_error || x.hidden)));
     if (r) used.set(key, r);
   }
   const status = (r: StoredSetting): RowStatus =>
@@ -225,6 +243,7 @@ export interface SettingDiagnosticRow {
 /** Déchiffre un token lu en base ; par l'API Settings (decrypt=1) il est déjà en clair. */
 function plainToken(r: StoredSetting): string {
   if (r.decrypt_error) throw new Error("the Settings API could not decrypt onestock_token (SETTINGS_ENCRYPTION_KEY of the Extensions application)");
+  if (r.hidden) throw new Error("the Settings API returned onestock_token without its value (value null even with decrypt=1): check SETTINGS_ENCRYPTION_KEY of the Extensions application");
   const v = r.value ?? "";
   return v.startsWith("enc:v1:") ? decryptSetting(v) : v;
 }
@@ -243,12 +262,20 @@ export function diagnoseSettings(loaded: LoadedSettings): { rows: SettingDiagnos
       extension_id: r.extension_id,
       environment: r.environment,
       encrypted: r.encrypted,
-      empty: !r.value && !r.decrypt_error,
+      empty: !r.value && !r.decrypt_error && !r.hidden,
       status: loaded.status(r),
     }));
   const token = loaded.used.get("onestock_token");
   let decrypt = "no_token";
-  if (token) {
+  if (!token) {
+    // Pourquoi aucune ligne onestock_token n'est retenue : raison de chaque ligne écartée.
+    const tokens = loaded.all.filter((r) => r.key === "onestock_token");
+    decrypt = tokens.length
+      ? `no_token: ${tokens.map((r) => `[site ${r.site_id || "global"} · extension ${r.extension_id || "*"} · environment ${r.environment || "-"} → ${
+        !r.value && !r.decrypt_error && !r.hidden ? "empty value" : loaded.status(r).replace(/_/g, " ")
+      }]`).join(" ")}${loaded.environment ? ` · selected environment: ${loaded.environment}` : ""}`
+      : "no_token_rows";
+  } else {
     try {
       decrypt = plainToken(token) ? "ok" : "empty";
     } catch (err) {
@@ -290,7 +317,7 @@ export async function getOnestockSettings(siteId: string): Promise<OnestockSetti
     throw createError({
       statusCode: 500,
       statusMessage: loaded.source === "api"
-        ? "Cannot decrypt onestock_token: the Settings API returned decrypt_error (SETTINGS_ENCRYPTION_KEY of the Extensions application)"
+        ? `Cannot read onestock_token: ${err instanceof Error ? err.message : String(err)}`
         : "Cannot decrypt onestock_token: check SETTINGS_ENCRYPTION_KEY (same value as the Extensions application)",
     });
   }
