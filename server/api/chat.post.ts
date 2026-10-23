@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { requireSession } from "../utils/session";
 import { SYSTEM_PROMPT, contextPrompt, type UiContext } from "../utils/prompt";
-import { TOOL_DEFINITIONS, isWriteTool, runTool, validateTool, type ToolNotice } from "../utils/tools";
+import { TOOL_DEFINITIONS, isWriteTool, runTool, validateTool, type StoreMap, type ToolNotice } from "../utils/tools";
 import { PRODUCT_TOOLS, enrichProducts, extractProducts, type ProductList } from "../utils/products";
 import { getOnestockSettings } from "../utils/settings";
 import { onestockRequest } from "../utils/onestock";
@@ -25,6 +25,7 @@ type ChatEvent =
   | { type: "tool"; id: string; name: string; input: unknown; status: "running" | "done" | "error" | "declined" }
   | { type: "notice"; notice: ToolNotice }
   | { type: "products"; list: ProductList }
+  | { type: "stores"; map: StoreMap }
   | { type: "confirm"; actions: { id: string; name: string; input: unknown }[] }
   | { type: "done"; messages: MessageParam[]; stop_reason: string | null }
   | { type: "error"; message: string };
@@ -114,6 +115,7 @@ export default defineEventHandler(async (event) => {
             const res = await runTool(session.siteId, name, args, { userId: session.userId, lang: body.context?.lang });
             send({ type: "tool", id: call.id, name, input: args, status: res.isError ? "error" : "done" });
             if (res.notice) send({ type: "notice", notice: res.notice });
+            if (res.stores) send({ type: "stores", map: res.stores });
             if (!res.isError && PRODUCT_TOOLS.has(name)) {
               try {
                 const langs = await productLangs();

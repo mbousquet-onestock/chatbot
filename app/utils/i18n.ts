@@ -5,6 +5,14 @@ const fr = {
     site_not_allowed: "Ce site n'est pas dans ALLOWED_SITE_IDS.",
     unknown_extension: "Cet extension_id ne correspond pas à EXTENSION_ID.",
   } as Record<string, string>,
+  stores: {
+    title: (n: number) => (n > 1 ? `${n} magasins avec du stock` : n === 1 ? "1 magasin avec du stock" : "Aucun magasin avec du stock"),
+    subtitle: (item: string, qty: number) => `${item}${qty > 1 ? ` · ${qty} articles` : ""} · cliquez sur un magasin pour le choisir`,
+    inStock: (n: number) => `${n} en stock`,
+    chooseButton: "Choisir",
+    choose: (store: string, storeId: string, item: string, itemId: string, qty: number, mode: string) =>
+      `Je choisis le magasin « ${store} » (${storeId}) pour ${mode === "reservation" ? "la réservation" : "le retrait"} de ${qty > 1 ? `${qty} × ` : ""}« ${item} » (référence ${itemId}).`,
+  },
   products: {
     reserve: "Réserver",
     order: "Commander",
@@ -148,6 +156,7 @@ const fr = {
     update_order: "Mise à jour de la commande",
     update_line_item_groups_state: "Changement d'état d'articles",
     create_order: "Création de la commande",
+    find_stores_with_stock: "Recherche des magasins avec du stock",
     find_api_operations: "Recherche dans les API OneStock",
     describe_api_operation: "Lecture de la documentation de l'API",
     call_onestock_api: "Appel à l'API OneStock",
@@ -172,6 +181,14 @@ const en: Dict = {
     missing_site_id: "No OneStock site: open the extension from the back office or add ?site_id=… to the URL.",
     site_not_allowed: "This site is not in ALLOWED_SITE_IDS.",
     unknown_extension: "This extension_id does not match EXTENSION_ID.",
+  },
+  stores: {
+    title: (n: number) => (n > 1 ? `${n} stores with stock` : n === 1 ? "1 store with stock" : "No store with stock"),
+    subtitle: (item: string, qty: number) => `${item}${qty > 1 ? ` · ${qty} items` : ""} · click a store to choose it`,
+    inStock: (n: number) => `${n} in stock`,
+    chooseButton: "Choose",
+    choose: (store: string, storeId: string, item: string, itemId: string, qty: number, mode: string) =>
+      `I choose the store “${store}” (${storeId}) for the ${mode === "reservation" ? "reservation" : "collection"} of ${qty > 1 ? `${qty} × ` : ""}“${item}” (reference ${itemId}).`,
   },
   products: {
     reserve: "Reserve",
@@ -312,6 +329,7 @@ const en: Dict = {
     update_order: "Order update",
     update_line_item_groups_state: "Item state change",
     create_order: "Creating the order",
+    find_stores_with_stock: "Finding stores with stock",
     find_api_operations: "Searching the OneStock APIs",
     describe_api_operation: "Reading the API documentation",
     call_onestock_api: "Calling the OneStock API",

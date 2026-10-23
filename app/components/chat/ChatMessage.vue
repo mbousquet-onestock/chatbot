@@ -51,7 +51,7 @@ const statusIcon = { running: "loader", done: "check", error: "error-outline", d
 </script>
 
 <template>
-  <div v-if="item.role === 'user' || item.text || item.tools.length || item.notices?.length || item.products?.length || item.error || streaming" :class="['message', item.role]">
+  <div v-if="item.role === 'user' || item.text || item.tools.length || item.notices?.length || item.products?.length || item.storeMaps?.length || item.error || streaming" :class="['message', item.role]">
     <div v-if="item.role === 'assistant'" class="avatar"><OsIcon icon="onebot" size="s" /></div>
     <div class="bubble">
       <div v-if="item.tools.length" class="tools">
@@ -75,6 +75,14 @@ const statusIcon = { running: "loader", done: "check", error: "error-outline", d
         v-for="(list, i) in item.products ?? []"
         :key="`products-${i}`"
         :list="list"
+        :lang="lang"
+        :disabled="busy"
+        @ask="emit('ask', $event)"
+      />
+      <StoreMap
+        v-for="(data, i) in item.storeMaps ?? []"
+        :key="`stores-${i}`"
+        :data="data"
         :lang="lang"
         :disabled="busy"
         @ask="emit('ask', $event)"

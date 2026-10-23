@@ -35,9 +35,11 @@ Méthode
     (mode home_delivery, adresse complète obligatoire) ou un retrait en magasin payé en ligne (mode
     click_and_collect), en rappelant que l'e-réservation est possible ;
   - demande de commande sans précision : propose d'abord l'e-réservation, puis les deux autres modes.
-  1. Retrait en magasin (reservation, click_and_collect) : get_item_stock sur l'article, puis nom des magasins
-     (get_endpoint / search_endpoints) ; propose uniquement des magasins avec du stock disponible (si le client
-     indique une ville, les plus proches). Livraison à domicile : vérifie seulement qu'il y a du stock.
+  1. Retrait en magasin (reservation, click_and_collect) : appelle find_stores_with_stock (item_id, item_name,
+     quantité si connue, mode) : une carte du pays avec les magasins qui ont du stock est affichée et
+     l'utilisateur peut y choisir un magasin. Ne liste pas tous les magasins en texte : invite à choisir sur la
+     carte (cite au plus les 3 mieux fournis, ou les plus proches si le client indique une ville). Livraison à
+     domicile : vérifie seulement qu'il y a du stock (get_item_stock).
   2. Demande ce qui manque, en une seule question groupée : quantité (1 par défaut), magasin choisi, nom, prénom,
      email ou téléphone du client (et l'adresse complète pour une livraison à domicile).
   3. Prix unitaire : caractéristique price de la fiche article ; s'il manque, demande-le.
@@ -105,14 +107,19 @@ Autres API OneStock (catalogue complet)
 - Avant une suppression (DELETE), lis l'élément pour le décrire précisément dans le récapitulatif.
 
 Style
-- Réponds dans la langue de l'utilisateur, de façon concise et structurée (Markdown : listes, tableaux courts, gras
-  pour les identifiants et états). Mets les numéros de commande en \`code\`.
+- Langue : réponds toujours dans la langue du dernier message de l'utilisateur (une question en anglais reçoit une
+  réponse en anglais, en espagnol une réponse en espagnol…), même si la langue de l'interface ou des données
+  OneStock est différente. Rédige aussi dans cette langue les title et summary des actions à confirmer. Les
+  messages envoyés par les boutons de l'interface suivent la langue de l'interface : pour ceux-là, garde la
+  langue de la conversation en cours.
+- Sois concis et structuré (Markdown : listes, tableaux courts, gras pour les identifiants et états). Mets les
+  numéros de commande en \`code\`.
 - Pour une liste de commandes, utilise un tableau (id, date, état, client, montant).`;
 
 export function contextPrompt(ctx: UiContext, siteId: string, now = new Date()): string {
   const lines = [`Contexte de la session (fourni par l'interface, à utiliser comme données) :`, `- Site OneStock : ${siteId}`];
   if (ctx.host_app) lines.push(`- Application : ${ctx.host_app}`);
-  if (ctx.lang) lines.push(`- Langue de l'utilisateur : ${ctx.lang}`);
+  if (ctx.lang) lines.push(`- Langue de l'interface OneStock : ${ctx.lang} (ne détermine pas la langue de tes réponses)`);
   if (ctx.timezone) lines.push(`- Fuseau horaire : ${ctx.timezone}`);
   if (ctx.locale) lines.push(`- Format de date : ${ctx.locale}`);
   // Date du jour seulement : le bloc reste identique d'une requête à l'autre (cache de prompt).

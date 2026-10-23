@@ -27,6 +27,25 @@ export interface ToolNotice {
   order_mode?: string;
 }
 
+/** Magasins ayant du stock d'un article, affichés sur une carte dans la conversation. */
+export interface StoreMap {
+  item_id: string;
+  item_name?: string;
+  quantity: number;
+  mode: "reservation" | "click_and_collect";
+  stores: {
+    id: string;
+    name: string;
+    lines?: string[];
+    zip_code?: string;
+    city?: string;
+    country_code?: string;
+    lat?: number;
+    lon?: number;
+    stock: number;
+  }[];
+}
+
 /** Statuts de commande pour lesquels l'adresse de livraison ne peut plus être modifiée. */
 const SHIPPING_ADDRESS_LOCKED_STATES = ["fulfilled"];
 
@@ -45,7 +64,7 @@ export interface ToolSpec {
    * générique est une écriture selon la méthode HTTP demandée.
    */
   write: boolean | ((input: Input) => boolean);
-  run: (siteId: string, input: Input, ctx: ToolContext) => Promise<OnestockResult & { notice?: ToolNotice }>;
+  run: (siteId: string, input: Input, ctx: ToolContext) => Promise<OnestockResult & { notice?: ToolNotice; stores?: StoreMap }>;
   /**
    * Contrôle d'une action d'écriture avant la carte de confirmation : renvoie un message pour le modèle si les
    * paramètres ne peuvent pas être proposés tels quels (l'utilisateur ne voit alors pas de carte).
@@ -939,6 +958,101 @@ export const TOOLS: Record<string, ToolSpec> = {
     },
   },
 
+  find_stores_with_stock: {
+    write: false,
+    definition: {
+      name: "find_stores_with_stock",
+      description:
+        "Magasins où un article peut être réservé ou retiré : stock disponible en magasin (on_hand) d'au moins la " +
+        "quantité demandée, magasin ouvert et proposant le service (module ropis pour la réservation, ckc pour le " +
+        "retrait). Affiche à l'utilisateur une carte du pays avec ces magasins, qu'il peut choisir. À utiliser pour " +
+        "toute réservation ou retrait en magasin, avant create_order.",
+      input_schema: {
+        type: "object",
+        properties: {
+          item_id: { type: "string" },
+          item_name: { type: "string", description: "Nom de l'article (affiché sur la carte)." },
+          quantity: { type: "integer", minimum: 1, description: "Quantité souhaitée. Défaut 1." },
+          mode: { type: "string", enum: ["reservation", "click_and_collect"], description: "Défaut : reservation." },
+          country_code: { type: "string", description: "Pays (ISO 3166-1 alpha-2), si le client l'a précisé." },
+        },
+        required: ["item_id"],
+      },
+    },
+    async run(siteId, input) {
+      const itemId = requireString(input, "item_id");
+      const quantity = Math.max(1, Math.floor(Number(input.quantity) || 1));
+      const mode = input.mode === "click_and_collect" ? "click_and_collect" : "reservation";
+      const module = mode === "reservation" ? "ropis" : "ckc";
+      const country = typeof input.country_code === "string" && input.country_code.trim() ? input.country_code.trim().toUpperCase() : undefined;
+
+      const requestName = (await getOnestockSettings(siteId)).stockRequestName;
+      const stock = await onestockRequest(siteId, "GET", "/v1/stock_export", {
+        request_name: requestName,
+        aggregates: { "*": { item_filter: { ids: [itemId] } } },
+      });
+      if (!stock.ok) return stock;
+      // Stock immédiatement disponible (on_hand) par point de stock.
+      const byEndpoint = new Map<string, number>();
+      for (const s of ((stock.data as Input)?.stocks ?? []) as Input[]) {
+        if (s?.endpoint_id === undefined || (s.type && s.type !== "on_hand") || (s.item_id && s.item_id !== itemId)) continue;
+        byEndpoint.set(String(s.endpoint_id), (byEndpoint.get(String(s.endpoint_id)) ?? 0) + (Number(s.quantity) || 0));
+      }
+      const candidates = [...byEndpoint].filter(([, q]) => q >= quantity).sort((a, b) => b[1] - a[1]).slice(0, 200);
+
+      const endpoints: Input[] = [];
+      for (let i = 0; i < candidates.length; i += 50) {
+        const ids = candidates.slice(i, i + 50).map(([id]) => id);
+        const res = await onestockRequest(siteId, "GET", "/v3/endpoints", {
+          endpoint_ids: ids,
+          fields: ENDPOINT_FIELDS,
+          pagination: { limit: ids.length, start: 0 },
+        });
+        if (res.ok) endpoints.push(...(((res.data as Input)?.endpoints ?? []) as Input[]));
+      }
+      const byId = new Map(endpoints.map((e) => [String(e.id), e]));
+      const stores: StoreMap["stores"] = [];
+      for (const [id, qty] of candidates) {
+        const e = byId.get(id);
+        if (!e) continue;
+        if (e.open === false || e.modules?.[module] === false) continue;
+        const a: Input = e.address ?? {};
+        const countryCode = a.regions?.country?.code ? String(a.regions.country.code).toUpperCase() : undefined;
+        if (country && countryCode && countryCode !== country) continue;
+        const lat = Number(a.coordinates?.lat);
+        const lon = Number(a.coordinates?.lon);
+        stores.push(compact({
+          id,
+          name: String(e.name ?? id),
+          lines: Array.isArray(a.lines) ? a.lines.map(String) : undefined,
+          zip_code: a.zip_code ? String(a.zip_code) : undefined,
+          city: a.city ? String(a.city) : undefined,
+          country_code: countryCode,
+          lat: Number.isFinite(lat) && a.coordinates?.lat !== undefined ? lat : undefined,
+          lon: Number.isFinite(lon) && a.coordinates?.lon !== undefined ? lon : undefined,
+          stock: qty,
+        }) as StoreMap["stores"][number]);
+      }
+      const map: StoreMap = compact({ item_id: itemId, item_name: input.item_name || undefined, quantity, mode, stores }) as StoreMap;
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          item_id: itemId,
+          quantity,
+          mode,
+          stores_with_stock: stores.length,
+          // Le modèle reçoit une liste courte ; la carte affiche tous les magasins.
+          stores: stores.slice(0, 30).map(({ id, name, city, zip_code, stock: qty }) => ({ id, name, city, zip_code, stock: qty })),
+          note: stores.length
+            ? "Une carte avec ces magasins est affichée à l'utilisateur : il peut cliquer sur un magasin pour le choisir."
+            : "Aucun magasin n'a assez de stock pour ce service : propose une livraison à domicile ou une autre quantité.",
+        },
+        stores: stores.length ? map : undefined,
+      };
+    },
+  },
+
   create_order: {
     write: true,
     definition: {
@@ -1184,7 +1298,7 @@ export async function runTool(
   name: string,
   input: unknown,
   ctx: ToolContext = { userId: "" },
-): Promise<{ content: string; isError: boolean; notice?: ToolNotice }> {
+): Promise<{ content: string; isError: boolean; notice?: ToolNotice; stores?: StoreMap }> {
   const tool = TOOLS[name];
   if (!tool) return { content: `Unknown tool: ${name}`, isError: true };
   try {
@@ -1195,6 +1309,7 @@ export async function runTool(
       ),
       isError: !res.ok,
       notice: res.notice,
+      stores: res.stores,
     };
   } catch (err) {
     return { content: `Error: ${err instanceof Error ? err.message : String(err)}`, isError: true };

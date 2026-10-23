@@ -107,7 +107,10 @@ usuels (`image_url`, `image`…), puis sous tout nom évoquant une image, puis p
 Sur un résultat de recherche, le bouton **Commander** lance une commande en livraison à domicile ou en retrait
 en magasin payé en ligne (l'assistant demande le mode), et le bouton **Réserver** lance la création d'une commande, en proposant d'abord
 l'e-réservation en magasin (`create_order`, mode `reservation` : type `ropis`, payé au retrait). L'assistant :
-1. vérifie le stock de l'article et propose les magasins qui en ont ;
+1. cherche les magasins qui ont l'article en stock (`find_stores_with_stock` : stock `on_hand` d'au moins la
+   quantité demandée, magasin ouvert, module `ropis` pour la réservation ou `ckc` pour le retrait) et les affiche
+   sur une **carte du pays** (Leaflet), avec la liste des magasins et leur stock ; un clic sur **Choisir**
+   sélectionne le magasin ;
 2. demande la quantité, le magasin et le client (nom, prénom, email ou téléphone) ;
 3. reprend le prix de la fiche article ;
 4. présente un récapitulatif (articles, total, client, magasin) à confirmer, puis crée la commande
@@ -115,6 +118,16 @@ l'e-réservation en magasin (`create_order`, mode `reservation` : type `ropis`, 
 
 Les modes `click_and_collect` (types `ffs`, `ckc`) et `home_delivery` (type `ffs`, adresse obligatoire) sont aussi
 disponibles. La commande n'est pas proposée tant qu'il manque un prix, le client, le magasin ou l'adresse.
+
+Le fond de carte est OpenStreetMap par défaut ; pour un autre fournisseur de tuiles, définir
+`NUXT_PUBLIC_MAP_TILES_URL` (modèle `…/{z}/{x}/{y}.png`) et `NUXT_PUBLIC_MAP_ATTRIBUTION`. Les serveurs de tuiles
+d'OpenStreetMap sont limités à un usage modéré : pour un usage intensif, utiliser un fournisseur dédié.
+
+### Langue des réponses
+
+L'assistant répond dans la langue de la question (dernier message de l'utilisateur), quelle que soit la langue
+de l'interface OneStock. Les textes fixes de l'interface (boutons, alertes, cartes de confirmation) suivent la
+langue de l'interface.
 
 ### Toutes les API OneStock (catalogue)
 

@@ -16,6 +16,13 @@ export default defineNuxtConfig({
     },
   },
   components: [{ path: "~/components", pathPrefix: false }],
+  runtimeConfig: {
+    public: {
+      // Fond de carte des magasins (Leaflet) : modèle d'URL de tuiles et attribution.
+      mapTilesUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      mapAttribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
+    },
+  },
   nitro: {
     // Vercel (preset détecté automatiquement) : une réponse du chat enchaîne plusieurs appels au modèle et à l'API.
     vercel: { functions: { maxDuration: 300 } },

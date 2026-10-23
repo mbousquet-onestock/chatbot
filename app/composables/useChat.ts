@@ -36,6 +36,27 @@ export interface ChatProduct {
   quantity?: number;
 }
 
+/** Magasin ayant du stock (carte de réservation), voir StoreMap côté serveur. */
+export interface ChatStore {
+  id: string;
+  name: string;
+  lines?: string[];
+  zip_code?: string;
+  city?: string;
+  country_code?: string;
+  lat?: number;
+  lon?: number;
+  stock: number;
+}
+
+export interface ChatStoreMap {
+  item_id: string;
+  item_name?: string;
+  quantity: number;
+  mode: "reservation" | "click_and_collect";
+  stores: ChatStore[];
+}
+
 export interface ChatProductList {
   context: "order" | "search";
   order_id?: string;
@@ -49,6 +70,8 @@ export interface ChatItem {
   notices?: ChatNotice[];
   /** Articles affichés en cartes sous le texte. */
   products?: ChatProductList[];
+  /** Cartes des magasins ayant du stock. */
+  storeMaps?: ChatStoreMap[];
   error?: string;
 }
 
@@ -128,6 +151,9 @@ export function useChat() {
         break;
       case "products":
         reply.products = [...(reply.products ?? []), event.list];
+        break;
+      case "stores":
+        reply.storeMaps = [...(reply.storeMaps ?? []), event.map];
         break;
       case "confirm":
         pending.value = event.actions;
