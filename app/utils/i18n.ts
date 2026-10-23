@@ -7,6 +7,8 @@ const fr = {
   } as Record<string, string>,
   products: {
     reserve: "Réserver",
+    order: "Commander",
+    orderMessage: (name: string, id: string) => `Je souhaite commander l'article « ${name} » (référence ${id}).`,
     reserveMessage: (name: string, id: string) => `Je souhaite réserver l'article « ${name} » (référence ${id}).`,
     quantity: (n: number) => `quantité ${n}`,
   },
@@ -173,6 +175,8 @@ const en: Dict = {
   },
   products: {
     reserve: "Reserve",
+    order: "Order",
+    orderMessage: (name: string, id: string) => `I would like to order the item “${name}” (reference ${id}).`,
     reserveMessage: (name: string, id: string) => `I would like to reserve the item “${name}” (reference ${id}).`,
     quantity: (n: number) => `quantity ${n}`,
   },

@@ -98,11 +98,14 @@ qu'après clic sur **Confirmer** ; un refus est renvoyé au modèle, qui n'insis
 
 Les articles renvoyés par `get_order`, `get_order_items_details`, `get_item` et `search_items` s'affichent en
 cartes sous la réponse : vignette, nom, « prix | couleur », référence (et quantité pour une commande). Le serveur
-les extrait des réponses OneStock (`server/utils/products.ts`, caractéristiques `name`, `image_url`, `price`,
-`color`, `size`, dans la langue de l'utilisateur puis `default_lang`) et les envoie au navigateur (événement
-`products`).
+les extrait des réponses OneStock (`server/utils/products.ts`, dans la langue de l'utilisateur puis
+`default_lang`) et les envoie au navigateur (événement `products`). Quand l'image, le prix ou le nom manquent, il
+relit la fiche article complète (`GET /v3/items`, toutes les caractéristiques) : l'image est cherchée sous les noms
+usuels (`image_url`, `image`…), puis sous tout nom évoquant une image, puis parmi les URL d'image ; le prix sous
+`price`, une caractéristique contenant « price »/« prix », puis le prix par canal de vente (un prix à 0 est ignoré).
 
-Sur un résultat de recherche, le bouton **Réserver** lance la création d'une commande, en proposant d'abord
+Sur un résultat de recherche, le bouton **Commander** lance une commande en livraison à domicile ou en retrait
+en magasin payé en ligne (l'assistant demande le mode), et le bouton **Réserver** lance la création d'une commande, en proposant d'abord
 l'e-réservation en magasin (`create_order`, mode `reservation` : type `ropis`, payé au retrait). L'assistant :
 1. vérifie le stock de l'article et propose les magasins qui en ont ;
 2. demande la quantité, le magasin et le client (nom, prénom, email ou téléphone) ;

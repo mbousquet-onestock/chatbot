@@ -37,6 +37,13 @@ const broken = reactive(new Set<string>());
       <div v-if="list.context === 'search'" class="actions">
         <OsButton
           type="secondary"
+          icon="truck"
+          :text="t.order"
+          :disabled="disabled"
+          @click="emit('ask', t.orderMessage(p.name ?? p.id, p.id))"
+        />
+        <OsButton
+          type="secondary"
           icon="shopping-cart-outline"
           :text="t.reserve"
           :disabled="disabled"
@@ -62,9 +69,9 @@ const broken = reactive(new Set<string>());
 .name { font-weight: 700; color: var(--os-text-primary); overflow-wrap: anywhere; }
 .details { color: var(--os-text-primary); font-weight: 400; }
 .ref { overflow-wrap: anywhere; }
-.actions { flex-shrink: 0; }
+.actions { flex-shrink: 0; display: flex; gap: var(--os-spacing-s); }
 @media (max-width: 480px) {
   .product { flex-wrap: wrap; }
-  .actions { width: 100%; display: flex; justify-content: flex-end; }
+  .actions { width: 100%; justify-content: flex-end; }
 }
 </style>

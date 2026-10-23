@@ -2,8 +2,9 @@ import OpenAI from "openai";
 import { requireSession } from "../utils/session";
 import { SYSTEM_PROMPT, contextPrompt, type UiContext } from "../utils/prompt";
 import { TOOL_DEFINITIONS, isWriteTool, runTool, validateTool, type ToolNotice } from "../utils/tools";
-import { PRODUCT_TOOLS, extractProducts, type ProductList } from "../utils/products";
+import { PRODUCT_TOOLS, enrichProducts, extractProducts, type ProductList } from "../utils/products";
 import { getOnestockSettings } from "../utils/settings";
+import { onestockRequest } from "../utils/onestock";
 
 type MessageParam = OpenAI.Chat.ChatCompletionMessageParam;
 type ToolCall = OpenAI.Chat.ChatCompletionMessageFunctionToolCall;
@@ -91,6 +92,14 @@ export default defineEventHandler(async (event) => {
           "fr",
         ].filter((l): l is string => !!l));
 
+      /** Fiches articles complètes (toutes les caractéristiques) pour compléter les cartes. */
+      const readItemSheets = (ids: string[]) =>
+        onestockRequest(session.siteId, "GET", "/v3/items", {
+          filters: { ids },
+          fields: ["product_id"],
+          pagination: { limit: ids.length, start: 0 },
+        });
+
       /** Exécute les appels d'outils d'un tour assistant et ajoute un message `tool` par appel. */
       const executeTools = async (calls: ToolCall[], decisions: Record<string, boolean> = {}) => {
         const results = await Promise.all(
@@ -107,8 +116,9 @@ export default defineEventHandler(async (event) => {
             if (res.notice) send({ type: "notice", notice: res.notice });
             if (!res.isError && PRODUCT_TOOLS.has(name)) {
               try {
-                const list = extractProducts(name, JSON.parse(res.content), await productLangs(), args);
-                if (list) send({ type: "products", list });
+                const langs = await productLangs();
+                const list = extractProducts(name, JSON.parse(res.content), langs, args);
+                if (list) send({ type: "products", list: await enrichProducts(list, langs, readItemSheets).catch(() => list) });
               } catch {
                 // réponse non JSON : pas de cartes
               }
