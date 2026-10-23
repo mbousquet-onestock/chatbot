@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { decryptSetting } from "../lib/settings-secrets.mjs";
-import { currentApiContext } from "./apiContext";
+import { currentApiContext } from "./apiContext.ts";
 
 /**
  * Configuration OneStock d'un site, lue dans la table `settings` de l'application Extensions : par l'API Settings
