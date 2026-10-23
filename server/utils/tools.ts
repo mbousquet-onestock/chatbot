@@ -3,6 +3,7 @@ import { missingAddressParts, sameAddress } from "./addresses";
 import { toOnestockDate } from "./dates";
 import { encodeId, onestockRequest, type OnestockResult } from "./onestock";
 import { getOnestockSettings } from "./settings";
+import { contextQuery } from "./apiContext";
 import { checkCall, describeOperation, findOperations, listCategories, matchOperation, safeConcretePath } from "./apiCatalog";
 
 type Input = Record<string, any>;
@@ -159,7 +160,7 @@ const indexRanges = {
 /** Lien vers la route /api/invoices qui trace la consultation puis ouvre la facture de la commande. */
 export function invoiceLink(orderId: string, siteId: string, userId: string): string {
   const user = userId ? `&user_id=${encodeURIComponent(userId)}` : "";
-  return `/api/invoices/${encodeURIComponent(orderId)}?site_id=${encodeURIComponent(siteId)}${user}`;
+  return `/api/invoices/${encodeURIComponent(orderId)}?site_id=${encodeURIComponent(siteId)}${user}${contextQuery()}`;
 }
 
 /** Remplace l'URL de facture (information.invoice) par un lien qui trace sa consultation (`invoice_link`). */
@@ -175,7 +176,7 @@ function withInvoiceLink(data: unknown, orderId: string, siteId: string, userId:
 
 /** Lien vers la route /api/documents qui affiche un document OneStock. */
 export function documentLink(documentId: string, siteId: string): string {
-  return `/api/documents/${encodeURIComponent(documentId)}?site_id=${encodeURIComponent(siteId)}`;
+  return `/api/documents/${encodeURIComponent(documentId)}?site_id=${encodeURIComponent(siteId)}${contextQuery()}`;
 }
 
 /** Ajoute `document_links` ({type: lien}) à chaque colis qui a des `documents` ({type: id}). */

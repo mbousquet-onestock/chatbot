@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { requireSession } from "../../utils/session";
-import { DEFAULT_STOCK_REQUEST_NAME, databaseUrl, diagnoseSettings, readSettingsRows, settingsApi, settingsSource, type SettingDiagnosticRow } from "../../utils/settings";
+import { DEFAULT_STOCK_REQUEST_NAME, databaseUrl, diagnoseSettings, readParentUrlCredentials, readSettingsRows, settingsApi, settingsSource, type SettingDiagnosticRow } from "../../utils/settings";
+import { currentApiContext } from "../../utils/apiContext";
 import { onestockRequest } from "../../utils/onestock";
 
 /** Une ligne de l'onglet Paramètres. Les secrets ne sont jamais renvoyés : seulement leur présence. */
@@ -149,16 +150,29 @@ export default defineEventHandler(async (event) => {
     checks.push({ name: sourceCheck, ok: false, detail: source ? db.error ?? "" : "no-source" });
   }
 
+  // Token du parent_url (API Settings, GET /api/settings/token) : prioritaire sur les lignes de la table.
+  const ctx = currentApiContext();
+  const byParent = !!ctx.parentUrl && viaApi;
+  let apiRoot: { value?: string; source: "parent_url" | "settings" } = { source: "settings" };
+  if (ctx.rejected) checks.push({ name: "parent_token", ok: false, detail: "invalid_parent_url" });
+  if (byParent) {
+    const creds = await timed(() => readParentUrlCredentials(ctx.parentUrl!, session.siteId, ctx.apiUrl));
+    apiRoot = { value: creds.result?.apiRoot, source: "parent_url" };
+    checks.push(creds.result
+      ? { name: "parent_token", ok: !!creds.result.apiRoot, detail: creds.result.apiRoot ? `${creds.result.apiRoot} · ${creds.ms} ms` : "no api_root" }
+      : { name: "parent_token", ok: false, detail: creds.error ?? "" });
+  }
+
   // Toutes les lignes de la table pour ces clés (sans valeur) et test du déchiffrement du token.
   let rows: SettingDiagnosticRow[] = [];
-  if (db.result && !db.result.fromEnv) {
+  if (db.result && !db.result.fromEnv && !byParent) {
     const diag = diagnoseSettings(db.result.loaded);
     rows = diag.rows;
     checks.push({ name: "decrypt", ok: diag.decrypt === "ok", detail: diag.decrypt });
   }
 
   // API OneStock : une recherche d'une seule commande valide l'URL et le token.
-  if (settings.filter((s) => s.required).every((s) => s.set) && db.result) {
+  if (byParent || (settings.filter((s) => s.required).every((s) => s.set) && db.result)) {
     const os = await timed(() =>
       onestockRequest(session.siteId, "GET", "/v2/search_orders", {
         fields: ["id"],
@@ -167,7 +181,7 @@ export default defineEventHandler(async (event) => {
     );
     checks.push(
       os.result
-        ? { name: "onestock", ok: os.result.ok, detail: onestockDetail(os.result, os.ms, db.result?.loaded.environment) }
+        ? { name: "onestock", ok: os.result.ok, detail: onestockDetail(os.result, os.ms, byParent ? undefined : db.result?.loaded.environment) }
         : { name: "onestock", ok: false, detail: os.error ?? "" },
     );
   } else {
@@ -189,7 +203,15 @@ export default defineEventHandler(async (event) => {
   return {
     source: source ?? null,
     environment_used: db.result?.loaded.environment ?? null,
-    session: { site_id: session.siteId, user_id: session.userId, extension_id: session.extensionId },
+    session: {
+      site_id: session.siteId,
+      user_id: session.userId,
+      extension_id: session.extensionId,
+      parent_url: ctx.parentUrl ?? null,
+      // Avec un parent_url, seule l'URL renvoyée pour ce parent_url compte (pas de repli sur la table).
+      api_root: byParent ? apiRoot.value ?? null : settings.find((e) => e.name === "onestock_api_root")?.value ?? null,
+      api_root_source: byParent ? "parent_url" : "settings",
+    },
     environment,
     settings,
     checks,

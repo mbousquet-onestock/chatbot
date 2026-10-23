@@ -14,7 +14,7 @@ interface Check {
   detail: string;
 }
 interface SettingsReport {
-  session: { site_id: string; user_id: string; extension_id: string };
+  session: { site_id: string; user_id: string; extension_id: string; parent_url?: string | null; api_root?: string | null; api_root_source?: string };
   environment: ConfigEntry[];
   settings: ConfigEntry[];
   checks: Check[];
@@ -105,6 +105,11 @@ const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_ex
           <div><div class="os-body-s os-text-secondary">{{ t.site }}</div><div class="os-body-l">{{ report.session.site_id }}</div></div>
           <div><div class="os-body-s os-text-secondary">{{ t.user }}</div><div class="os-body-l">{{ report.session.user_id }}</div></div>
           <div><div class="os-body-s os-text-secondary">{{ t.extension }}</div><div class="os-body-l">{{ report.session.extension_id }}</div></div>
+          <div class="wide"><div class="os-body-s os-text-secondary">parent_url</div><div class="os-body-l mono">{{ report.session.parent_url || "—" }}</div></div>
+          <div class="wide">
+            <div class="os-body-s os-text-secondary">{{ t.apiRoot }} ({{ report.session.api_root_source === "parent_url" ? t.fromParentUrl : t.fromSettings }})</div>
+            <div class="os-body-l mono">{{ report.session.api_root || "—" }}</div>
+          </div>
         </OsCardLayout>
       </section>
 
@@ -164,6 +169,7 @@ const rowColor = { used: "green", shadowed: "grey", other_site: "grey", other_ex
 .loading { display: flex; flex-direction: column; gap: var(--os-spacing-m); }
 section { display: flex; flex-direction: column; gap: var(--os-spacing-m); }
 h2 { margin: 0; }
+.grid .wide { grid-column: 1 / -1; overflow-wrap: anywhere; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--os-spacing-l); }
 .rows { display: flex; flex-direction: column; padding: 0; }
 .row { display: flex; align-items: center; gap: var(--os-spacing-l); padding: var(--os-spacing-l) var(--os-spacing-xl); }

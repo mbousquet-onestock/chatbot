@@ -10,6 +10,8 @@ export interface OnestockContext {
   timezone?: string;
   locale?: string;
   parent_url?: string;
+  /** URL de l'API OneStock envoyée par le back-office dans onestock_data. */
+  api_url?: string;
   injection_point_path?: string;
   host_app?: string;
   /** Anchor bo.order.action */
@@ -43,6 +45,7 @@ function readUrlParams(): OnestockContext {
     timezone: get("timezone"),
     locale: get("locale"),
     parent_url: get("parent_url"),
+    api_url: get("api_url"),
     injection_point_path: get("injection_point_path"),
     host_app: get("host_app"),
     order_id: get("order_id"),
@@ -97,6 +100,7 @@ async function start() {
         site_id: fromUrl.site_id ?? data.site_id,
         user_id: fromUrl.user_id ?? (data.user_id != null ? String(data.user_id) : undefined),
         host_app: data.host_app ?? fromUrl.host_app,
+        api_url: typeof data.api_url === "string" ? data.api_url : fromUrl.api_url,
         injection_point_path: data.injection_point_path ?? fromUrl.injection_point_path,
         order_id: data.order_id ?? fromUrl.order_id,
         order_ids: orderIds ?? fromUrl.order_ids,
@@ -126,6 +130,9 @@ function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
       "X-Onestock-Site-Id": c.site_id ?? "",
       "X-Onestock-User-Id": c.user_id ?? "",
       "X-Onestock-Extension-Id": c.extension_id ?? "",
+      // Identifie l'environnement OneStock : le serveur en déduit le token et l'URL d'API (API Settings).
+      "X-Onestock-Parent-Url": c.parent_url ?? "",
+      "X-Onestock-Api-Url": c.api_url ?? "",
     },
   });
 }

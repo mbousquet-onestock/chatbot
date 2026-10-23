@@ -1,4 +1,5 @@
 import type { H3Event } from "h3";
+import { apiContextFrom, enterApiContext } from "./apiContext";
 
 /** Contexte OneStock de la requête : site, utilisateur et extension transmis par le front. */
 export interface ChatSession {
@@ -30,5 +31,12 @@ export function requireSession(event: H3Event): ChatSession {
   if (expectedExtension && extensionId !== expectedExtension) {
     throw createError({ statusCode: 403, statusMessage: "unknown_extension" });
   }
+  // Environnement OneStock (parent_url, api_url) : en-têtes du front, ou paramètres des liens ouverts dans un onglet.
+  const query = getQuery(event);
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  enterApiContext(apiContextFrom(
+    getHeader(event, "x-onestock-parent-url") || str(query.parent_url),
+    getHeader(event, "x-onestock-api-url") || str(query.api_url),
+  ));
   return { siteId, extensionId, userId: getHeader(event, "x-onestock-user-id")?.trim() ?? "" };
 }

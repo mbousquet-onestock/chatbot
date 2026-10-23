@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { decryptSetting } from "../lib/settings-secrets.mjs";
+import { currentApiContext } from "./apiContext";
 
 /**
  * Configuration OneStock d'un site, lue dans la table `settings` de l'application Extensions : par l'API Settings
@@ -294,10 +295,59 @@ export function diagnoseSettings(loaded: LoadedSettings): { rows: SettingDiagnos
 }
 
 /** Configuration OneStock en clair d'un site, gardée 5 min en cache mémoire. */
+/** Token OneStock et URL d'API d'un parent_url (GET /api/settings/token), sans repli sur un autre token. */
+export async function readParentUrlCredentials(parentUrl: string, siteId: string, apiUrl?: string): Promise<{ token: string; apiRoot?: string }> {
+  const qs = new URLSearchParams({ parent_url: parentUrl, decrypt: "1", site_id: siteId });
+  if (apiUrl) qs.set("api_url", apiUrl);
+  let data: Record<string, unknown>;
+  try {
+    data = await settingsApiFetch(`/token?${qs}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/HTTP 404/.test(message)) {
+      throw new Error(`no OneStock token for ${parentUrl}: enter it in the Extensions application (Settings → OneStock token, opened from this OneStock environment)`);
+    }
+    throw err;
+  }
+  const token = typeof data.token === "string" ? data.token : "";
+  if (!token) throw new Error(`the Settings API returned no token value for ${parentUrl} (decrypt=1)`);
+  const apiRoot = typeof data.api_root === "string" && data.api_root ? data.api_root : apiUrl;
+  return { token, apiRoot };
+}
+
 export async function getOnestockSettings(siteId: string): Promise<OnestockSettings> {
-  const cacheKey = `${env("ONESTOCK_ENVIRONMENT") ?? ""}|${siteId}`;
+  const ctx = currentApiContext();
+  if (ctx.rejected) {
+    throw createError({ statusCode: 400, statusMessage: "invalid_parent_url: parent_url must be an https URL of a OneStock host" });
+  }
+  // Un token par environnement OneStock : le parent_url fait partie de la clé de cache.
+  const byParent = !!ctx.parentUrl && !!settingsApi();
+  const cacheKey = byParent ? `parent|${ctx.parentUrl}|${ctx.apiUrl ?? ""}|${siteId}` : `${env("ONESTOCK_ENVIRONMENT") ?? ""}|${siteId}`;
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
+
+  if (byParent) {
+    let creds: { token: string; apiRoot?: string };
+    try {
+      creds = await readParentUrlCredentials(ctx.parentUrl!, siteId, ctx.apiUrl);
+    } catch (err) {
+      console.error("[settings] token by parent_url failed", { parentUrl: ctx.parentUrl, err });
+      throw createError({ statusCode: 500, statusMessage: `Cannot read the OneStock token: ${err instanceof Error ? err.message : String(err)}` });
+    }
+    if (!creds.apiRoot) {
+      throw createError({ statusCode: 500, statusMessage: `No OneStock API URL for ${ctx.parentUrl} (api_root not returned by the Settings API)` });
+    }
+    // Autres réglages (vue de stock, langue) : lignes de la table, facultatives.
+    const loaded = await loadSettings(siteId).catch(() => undefined);
+    const value = {
+      token: creds.token,
+      apiRoot: normalizeApiRoot(creds.apiRoot),
+      stockRequestName: loaded?.used.get("onestock_stock_request_name")?.value?.trim() || DEFAULT_STOCK_REQUEST_NAME,
+      defaultLang: loaded?.used.get("default_lang")?.value?.trim() || undefined,
+    };
+    cache.set(cacheKey, { at: Date.now(), value });
+    return value;
+  }
 
   let loaded: LoadedSettings;
   try {

@@ -204,6 +204,19 @@ courant en fait partie. Les variables d'environnement se modifient dans Vercel (
 
 #### Lecture des settings
 
+**Token par `parent_url` (prioritaire)** : chaque environnement OneStock a son propre token, identifié par le
+`parent_url` du contexte de l'extension (page du back-office qui affiche l'iframe, par exemple
+`https://admin.eu1.qualif.onestock-retail.com`). Le navigateur transmet `parent_url` (et `api_url` reçue dans
+`onestock_data`) au serveur, qui appelle `GET …/api/settings/token?parent_url=…&decrypt=1&site_id=…` : la réponse
+donne le token et `api_root`, l'URL de l'API OneStock à appeler (le `parent_url` n'est jamais appelé). Il n'y a
+aucun repli sur un autre token : sans token saisi pour ce `parent_url`, l'erreur demande de le saisir dans
+l'application Extensions (Settings → Token OneStock). Seul un `parent_url` en https sur un hôte OneStock est
+accepté. Le cache (5 min) est propre à chaque `parent_url`. Les liens de documents et de factures emportent le
+`parent_url` pour rester sur le même environnement.
+
+Sans `parent_url` (ouverture hors back-office), les règles ci-dessous s'appliquent.
+
+
 Avec `SETTINGS_API_URL` + `SETTINGS_API_KEY`, les settings sont lus par l'API Settings de l'application Extensions
 (`GET …/api/settings?key=…&decrypt=1`, token déjà déchiffré : `SETTINGS_ENCRYPTION_KEY` est inutile côté chatbot).
 Sinon, ils sont lus directement dans la table (`DATABASE_URL`). Pour chaque clé, une seule ligne est retenue :
