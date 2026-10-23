@@ -185,21 +185,28 @@ export function selectRows(all: StoredSetting[], siteId: string) {
     rows.reduce<StoredSetting | undefined>((acc, r) => (!acc || score(r) > score(acc) ? r : acc), undefined);
 
   const applicable = all.filter((r) => siteOk(r) && extOk(r));
-  const environment =
-    env("ONESTOCK_ENVIRONMENT") ?? best(applicable.filter((r) => r.key === "onestock_api_root" && r.value))?.environment;
-  const inEnv = applicable.filter((r) => environment === undefined || r.environment === environment);
+  const sameEnv = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const hasValue = (x: StoredSetting) => !!(x.value || x.decrypt_error || x.hidden);
+  // Sans ONESTOCK_ENVIRONMENT : environment de la meilleure onestock_api_root qui a aussi un token dans le même
+  // environment (sinon celui de la meilleure onestock_api_root).
+  const roots = applicable.filter((r) => r.key === "onestock_api_root" && r.value).sort((a, b) => score(b) - score(a));
+  const withToken = roots.find((root) => applicable.some((t) => t.key === "onestock_token" && hasValue(t) && sameEnv(t.environment, root.environment)));
+  const configured = env("ONESTOCK_ENVIRONMENT");
+  const environment = configured ?? (withToken ?? roots[0])?.environment;
+  const environmentSource: "variable" | "api_root" | undefined = configured ? "variable" : environment !== undefined ? "api_root" : undefined;
+  const inEnv = applicable.filter((r) => environment === undefined || sameEnv(r.environment, environment));
 
   const used = new Map<string, StoredSetting>();
   for (const key of KEYS) {
-    const r = best(inEnv.filter((x) => x.key === key && (x.value || x.decrypt_error || x.hidden)));
+    const r = best(inEnv.filter((x) => x.key === key && hasValue(x)));
     if (r) used.set(key, r);
   }
   const status = (r: StoredSetting): RowStatus =>
     !siteOk(r) ? "other_site"
       : !extOk(r) ? "other_extension"
-        : environment !== undefined && r.environment !== environment ? "other_environment"
+        : environment !== undefined && !sameEnv(r.environment, environment) ? "other_environment"
           : used.get(r.key) === r ? "used" : "shadowed";
-  return { used, environment, status };
+  return { used, environment, environmentSource, status };
 }
 
 export interface LoadedSettings {
@@ -209,6 +216,7 @@ export interface LoadedSettings {
   used: Map<string, StoredSetting>;
   /** Environment retenu (ONESTOCK_ENVIRONMENT ou celui de l'URL d'API retenue). */
   environment?: string;
+  environmentSource?: "variable" | "api_root";
   status: (r: StoredSetting) => RowStatus;
 }
 
@@ -273,7 +281,7 @@ export function diagnoseSettings(loaded: LoadedSettings): { rows: SettingDiagnos
     decrypt = tokens.length
       ? `no_token: ${tokens.map((r) => `[site ${r.site_id || "global"} · extension ${r.extension_id || "*"} · environment ${r.environment || "-"} → ${
         !r.value && !r.decrypt_error && !r.hidden ? "empty value" : loaded.status(r).replace(/_/g, " ")
-      }]`).join(" ")}${loaded.environment ? ` · selected environment: ${loaded.environment}` : ""}`
+      }]`).join(" ")}${loaded.environment ? ` · selected environment: ${loaded.environment} (${loaded.environmentSource === "variable" ? "ONESTOCK_ENVIRONMENT" : "from onestock_api_root"})` : ""}`
       : "no_token_rows";
   } else {
     try {
