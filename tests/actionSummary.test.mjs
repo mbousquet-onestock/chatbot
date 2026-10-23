@@ -63,3 +63,20 @@ test("generic API call: business title, target and readable details", () => {
   assert.equal(c.title, "Créer zones");
   assert.deepEqual(c.sections.at(-1).lines, ["zone › name : IDF", "zone › zip codes : 75, 92"]);
 });
+
+test("reservation recap: items with prices, total, customer and store", () => {
+  const s = summarizeAction("create_order", {
+    items: [{ item_id: "00007", name: "Barbecue électrique NINJA", quantity: 2, unit_price: 299 }],
+    endpoint_id: "0001",
+    endpoint_name: "Toulouse Centre",
+    customer: { first_name: "Jean", last_name: "Dupont", email: "jdupont@example.com" },
+  }, "fr");
+  assert.equal(s.title, "Réserver en magasin");
+  assert.match(s.description, /Toulouse Centre/);
+  assert.match(s.description, /Jean Dupont/);
+  const [items, customer, store] = s.sections;
+  assert.equal(items.lines[0].replace(/\s/g, " "), "2 × Barbecue électrique NINJA (00007) — 598,00 €");
+  assert.match(items.lines[1].replace(/\s/g, " "), /^Total : 598,00 €$/);
+  assert.deepEqual(customer.lines, ["Jean Dupont", "jdupont@example.com"]);
+  assert.deepEqual(store.lines, ["Toulouse Centre"]);
+});

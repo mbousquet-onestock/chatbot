@@ -16,11 +16,30 @@ export interface PendingAction {
 
 /** Alerte produite par un outil (ex. résultat d'une annulation), voir ToolNotice côté serveur. */
 export interface ChatNotice {
-  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error" | "shipping_address_locked";
+  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error" | "shipping_address_locked" | "order_created";
   order_id: string;
   cancelled_states?: string[];
   refused_states?: string[];
   order_state?: string;
+  order_mode?: string;
+}
+
+/** Article affiché en carte (voir ProductCard côté serveur). */
+export interface ChatProduct {
+  id: string;
+  name?: string;
+  image?: string;
+  price?: number;
+  currency?: string;
+  color?: string;
+  size?: string;
+  quantity?: number;
+}
+
+export interface ChatProductList {
+  context: "order" | "search";
+  order_id?: string;
+  products: ChatProduct[];
 }
 
 export interface ChatItem {
@@ -28,6 +47,8 @@ export interface ChatItem {
   text: string;
   tools: ToolActivity[];
   notices?: ChatNotice[];
+  /** Articles affichés en cartes sous le texte. */
+  products?: ChatProductList[];
   error?: string;
 }
 
@@ -104,6 +125,9 @@ export function useChat() {
       }
       case "notice":
         reply.notices = [...(reply.notices ?? []), event.notice];
+        break;
+      case "products":
+        reply.products = [...(reply.products ?? []), event.list];
         break;
       case "confirm":
         pending.value = event.actions;

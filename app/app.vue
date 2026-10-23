@@ -111,6 +111,8 @@ onMounted(() => resize(Math.max(640, Math.round(window.screen.availHeight * 0.75
             :item="item"
             :lang="os.context.lang"
             :streaming="busy && i === items.length - 1"
+            :busy="busy || pending.length > 0"
+            @ask="submit"
           />
           <ActionConfirm v-if="pending.length" :actions="pending" :busy="busy" :lang="os.context.lang" @decide="decide" />
         </div>

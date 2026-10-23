@@ -2,7 +2,8 @@
 import MarkdownIt from "markdown-it";
 import type { ChatItem, ChatNotice } from "~/composables/useChat";
 
-const props = defineProps<{ item: ChatItem; streaming?: boolean; lang?: string }>();
+const props = defineProps<{ item: ChatItem; streaming?: boolean; lang?: string; busy?: boolean }>();
+const emit = defineEmits<{ ask: [text: string] }>();
 const t = computed(() => messagesFor(props.lang));
 
 // HTML brut désactivé : seul le Markdown produit par l'assistant est rendu.
@@ -32,6 +33,12 @@ function noticeAlert(n: ChatNotice) {
       return { type: "danger" as const, title: c.notPossibleTitle(n.order_id), subtitle: c.notPossibleText(states(n.refused_states)) };
     case "shipping_address_locked":
       return { type: "danger" as const, title: c.addressLockedTitle(n.order_id), subtitle: c.addressLockedText(n.order_state ?? "") };
+    case "order_created":
+      return {
+        type: "success" as const,
+        title: n.order_mode === "reservation" ? c.reservationCreatedTitle(n.order_id) : c.orderCreatedTitle(n.order_id),
+        subtitle: n.order_mode === "reservation" ? c.reservationCreatedText : c.orderCreatedText,
+      };
     case "cancel_nothing":
       return { type: "info" as const, title: c.nothingTitle(n.order_id), subtitle: c.nothingText };
     default:
@@ -44,7 +51,7 @@ const statusIcon = { running: "loader", done: "check", error: "error-outline", d
 </script>
 
 <template>
-  <div v-if="item.role === 'user' || item.text || item.tools.length || item.notices?.length || item.error || streaming" :class="['message', item.role]">
+  <div v-if="item.role === 'user' || item.text || item.tools.length || item.notices?.length || item.products?.length || item.error || streaming" :class="['message', item.role]">
     <div v-if="item.role === 'assistant'" class="avatar"><OsIcon icon="onebot" size="s" /></div>
     <div class="bubble">
       <div v-if="item.tools.length" class="tools">
@@ -64,6 +71,14 @@ const statusIcon = { running: "loader", done: "check", error: "error-outline", d
         <OsLoadingEl width="40%" />
         <span class="os-body-s os-text-secondary">{{ t.thinking }}</span>
       </div>
+      <ProductCards
+        v-for="(list, i) in item.products ?? []"
+        :key="`products-${i}`"
+        :list="list"
+        :lang="lang"
+        :disabled="busy"
+        @ask="emit('ask', $event)"
+      />
       <OsAlert
         v-for="(notice, i) in item.notices ?? []"
         :key="`notice-${i}`"

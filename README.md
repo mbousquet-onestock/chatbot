@@ -94,6 +94,25 @@ l'interface affiche une carte « Action à confirmer » : un récapitulatif réd
 (phrase explicative, client, adresses de livraison et de facturation présentées comme sur une fiche). L'appel à OneStock n'est fait
 qu'après clic sur **Confirmer** ; un refus est renvoyé au modèle, qui n'insiste pas.
 
+### Cartes articles et réservation
+
+Les articles renvoyés par `get_order`, `get_order_items_details`, `get_item` et `search_items` s'affichent en
+cartes sous la réponse : vignette, nom, « prix | couleur », référence (et quantité pour une commande). Le serveur
+les extrait des réponses OneStock (`server/utils/products.ts`, caractéristiques `name`, `image_url`, `price`,
+`color`, `size`, dans la langue de l'utilisateur puis `default_lang`) et les envoie au navigateur (événement
+`products`).
+
+Sur un résultat de recherche, le bouton **Réserver** lance la création d'une commande, en proposant d'abord
+l'e-réservation en magasin (`create_order`, mode `reservation` : type `ropis`, payé au retrait). L'assistant :
+1. vérifie le stock de l'article et propose les magasins qui en ont ;
+2. demande la quantité, le magasin et le client (nom, prénom, email ou téléphone) ;
+3. reprend le prix de la fiche article ;
+4. présente un récapitulatif (articles, total, client, magasin) à confirmer, puis crée la commande
+   (`POST /v3/orders`).
+
+Les modes `click_and_collect` (types `ffs`, `ckc`) et `home_delivery` (type `ffs`, adresse obligatoire) sont aussi
+disponibles. La commande n'est pas proposée tant qu'il manque un prix, le client, le magasin ou l'adresse.
+
 ### Toutes les API OneStock (catalogue)
 
 En plus des outils dédiés aux commandes, l'assistant peut utiliser toutes les routes de l'API OneStock (fiches

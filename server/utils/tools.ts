@@ -16,13 +16,15 @@ interface ToolDefinition {
 
 /** Message à afficher à l'utilisateur (alerte dans la conversation), traduit côté front à partir de son code. */
 export interface ToolNotice {
-  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error" | "shipping_address_locked";
+  code: "cancel_done" | "cancel_partial" | "cancel_not_possible" | "cancel_nothing" | "cancel_error" | "shipping_address_locked" | "order_created";
   order_id: string;
   /** États des lignes annulées et des lignes dont la transition a été refusée. */
   cancelled_states?: string[];
   refused_states?: string[];
   /** Statut de la commande qui bloque l'action. */
   order_state?: string;
+  /** Commande créée : type (reservation, click_and_collect, home_delivery). */
+  order_mode?: string;
 }
 
 /** Statuts de commande pour lesquels l'adresse de livraison ne peut plus être modifiée. */
@@ -204,6 +206,11 @@ function toOnestockAddress(a: Input | undefined): Record<string, unknown> | unde
     regions: a.country_code ? { country: { code: String(a.country_code).toUpperCase() } } : undefined,
     contact: a.contact,
   });
+}
+
+/** Mode de création de commande (réservation en magasin par défaut). */
+function orderMode(input: Input): "reservation" | "click_and_collect" | "home_delivery" {
+  return input.mode === "click_and_collect" || input.mode === "home_delivery" ? input.mode : "reservation";
 }
 
 function requireString(input: Input, key: string): string {
@@ -929,6 +936,114 @@ export const TOOLS: Record<string, ToolSpec> = {
         to: requireString(input, "to"),
         endpoint_id: input.endpoint_id,
       }));
+    },
+  },
+
+  create_order: {
+    write: true,
+    definition: {
+      name: "create_order",
+      description:
+        "Création d'une commande client (POST /v3/orders). Mode par défaut et à proposer en premier : " +
+        "« reservation » (e-réservation / Reserve & Collect, type ropis : les articles sont réservés dans un magasin " +
+        "et payés au retrait). Autres modes : « click_and_collect » (payé en ligne, retiré en magasin) et " +
+        "« home_delivery » (livraison à domicile, adresse obligatoire). Les prix unitaires viennent de la fiche " +
+        "article (caractéristique price) ; le magasin doit avoir du stock (get_item_stock).",
+      input_schema: {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["reservation", "click_and_collect", "home_delivery"], description: "Défaut : reservation." },
+          items: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              properties: {
+                item_id: { type: "string" },
+                quantity: { type: "integer", minimum: 1 },
+                unit_price: { type: "number", description: "Prix unitaire TTC (fiche article)." },
+                name: { type: "string", description: "Nom de l'article (affiché dans le récapitulatif)." },
+              },
+              required: ["item_id", "quantity", "unit_price"],
+            },
+          },
+          endpoint_id: { type: "string", description: "Magasin de retrait (reservation, click_and_collect)." },
+          endpoint_name: { type: "string", description: "Nom du magasin (affiché dans le récapitulatif)." },
+          customer: { ...contactSchema, description: "Client : nom, prénom, et email ou téléphone." },
+          delivery_address: { ...addressSchema, description: "Adresse de livraison (home_delivery uniquement)." },
+          currency: { type: "string", description: "Devise ISO 4217. Défaut : EUR." },
+          sales_channel: { type: "string", description: "Canal de vente (défaut : celui du site)." },
+          id_format: { type: "string", description: "Format d'identifiant de commande configuré chez OneStock (facultatif)." },
+        },
+        required: ["items", "customer"],
+      },
+    },
+    async validate(_siteId, input) {
+      const mode = orderMode(input);
+      const items: Input[] = Array.isArray(input.items) ? input.items : [];
+      const problems: string[] = [];
+      if (!items.length) problems.push("aucun article");
+      for (const it of items) {
+        if (!it?.item_id) problems.push("un article sans référence");
+        if (!(Number(it?.quantity) >= 1)) problems.push(`quantité de ${it?.item_id ?? "?"}`);
+        if (!Number.isFinite(Number(it?.unit_price)) || it?.unit_price === "" || it?.unit_price === null) {
+          problems.push(`prix unitaire de ${it?.item_id ?? "?"} (à lire dans la fiche article, sinon à demander)`);
+        }
+      }
+      const c: Input = input.customer ?? {};
+      if (!c.last_name) problems.push("nom du client");
+      if (!c.email && !c.phone_number) problems.push("email ou téléphone du client");
+      if (mode !== "home_delivery" && !input.endpoint_id) problems.push("magasin de retrait (endpoint_id)");
+      if (mode === "home_delivery") {
+        const missing = missingAddressParts(input.delivery_address);
+        if (missing.length) problems.push(`adresse de livraison (${missing.join(", ")})`);
+      }
+      return problems.length
+        ? `Commande non proposée, rien n'a été créé. Informations manquantes : ${problems.join(" ; ")}. Demande-les à l'utilisateur (sans les inventer), puis rappelle create_order.`
+        : undefined;
+    },
+    async run(siteId, input) {
+      const mode = orderMode(input);
+      const currency = String(input.currency || "EUR").toUpperCase();
+      const items: Input[] = Array.isArray(input.items) ? input.items : [];
+      const round = (n: number) => Math.round(n * 100) / 100;
+      const orderItems = items.map((it) => {
+        const quantity = Math.max(1, Math.floor(Number(it.quantity) || 1));
+        const unit = Number(it.unit_price);
+        const total = round(unit * quantity);
+        return {
+          item_id: String(it.item_id),
+          quantity,
+          pricing_details: { unit_price: unit, original_unit_price: unit, price: total, original_price: total },
+        };
+      });
+      const customer = compact({
+        title: input.customer?.title, first_name: input.customer?.first_name, last_name: input.customer?.last_name,
+        email: input.customer?.email, phone_number: input.customer?.phone_number,
+      });
+      const destination = mode === "home_delivery"
+        ? { address: toOnestockAddress({ ...input.delivery_address, contact: input.delivery_address?.contact ?? customer }) }
+        : { endpoint_id: String(input.endpoint_id) };
+      const types = mode === "reservation" ? ["ropis"] : mode === "click_and_collect" ? ["ffs", "ckc"] : ["ffs"];
+      const res = await onestockRequest(siteId, "POST", "/v3/orders", compact({
+        id_format: input.id_format || undefined,
+        order: compact({
+          types,
+          customer,
+          delivery: { destination },
+          order_items: orderItems,
+          pricing_details: { currency, price: round(orderItems.reduce((sum, i) => sum + i.pricing_details.price, 0)) },
+          sales_channel: input.sales_channel || undefined,
+        }),
+      }));
+      if (!res.ok) return res;
+      const data = res.data as Input | null;
+      const orderId = String(data?.id ?? data?.order?.id ?? data?.order_id ?? "");
+      return {
+        ...res,
+        data: { created: true, order_id: orderId || undefined, mode, response: data },
+        notice: { code: "order_created", order_id: orderId, order_mode: mode },
+      };
     },
   },
 

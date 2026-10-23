@@ -40,6 +40,17 @@ const texts = {
     location: "Point de stock",
     removed: "annulé",
     apiTitle: { POST: "Créer", PUT: "Remplacer", PATCH: "Modifier", DELETE: "Supprimer" } as Record<string, string>,
+    orderTitle: { reservation: "Réserver en magasin", click_and_collect: "Créer une commande à retirer en magasin", home_delivery: "Créer une commande livrée à domicile" } as Record<string, string>,
+    orderText: {
+      reservation: (store: string, who: string) => `Les articles seront réservés au magasin ${store} au nom de ${who}. Le client paiera au retrait.`,
+      click_and_collect: (store: string, who: string) => `Une commande sera créée au nom de ${who}, à retirer au magasin ${store}.`,
+      home_delivery: (_store: string, who: string) => `Une commande sera créée au nom de ${who}, livrée à l'adresse ci-dessous.`,
+    } as Record<string, (store: string, who: string) => string>,
+    articles: "Articles",
+    total: "Total",
+    store: "Magasin de retrait",
+    delivery: "Adresse de livraison",
+    theCustomer: "le client",
     apiDetails: "Informations envoyées",
     apiTarget: "Élément concerné",
     more: (n: number) => `… et ${n} autre(s) information(s)`,
@@ -72,6 +83,17 @@ const texts = {
     location: "Stock location",
     removed: "cancelled",
     apiTitle: { POST: "Create", PUT: "Replace", PATCH: "Update", DELETE: "Delete" } as Record<string, string>,
+    orderTitle: { reservation: "Reserve in store", click_and_collect: "Create a click & collect order", home_delivery: "Create a home delivery order" } as Record<string, string>,
+    orderText: {
+      reservation: (store: string, who: string) => `The items will be reserved at store ${store} for ${who}. The customer pays on collection.`,
+      click_and_collect: (store: string, who: string) => `An order will be created for ${who}, to collect at store ${store}.`,
+      home_delivery: (_store: string, who: string) => `An order will be created for ${who}, delivered to the address below.`,
+    } as Record<string, (store: string, who: string) => string>,
+    articles: "Items",
+    total: "Total",
+    store: "Collection store",
+    delivery: "Delivery address",
+    theCustomer: "the customer",
     apiDetails: "Information sent",
     apiTarget: "Affected item",
     more: (n: number) => `… and ${n} more`,
@@ -196,6 +218,49 @@ export function summarizeAction(name: string, input: Input, lang?: string): Acti
         sections.push({ label: t.signature, lines: [input.sign_on_collect ? t.yes : t.no] });
       }
       return { title: t.updateTitle, description: t.updateText(id), sections };
+    }
+
+    case "create_order": {
+      const mode = ["click_and_collect", "home_delivery"].includes(input.mode) ? String(input.mode) : "reservation";
+      const currency = clean(input.currency) || "EUR";
+      const money = (n: number) => {
+        try {
+          return new Intl.NumberFormat(lang || code, { style: "currency", currency }).format(n);
+        } catch {
+          return `${n} ${currency}`;
+        }
+      };
+      const items: Input[] = Array.isArray(input.items) ? input.items : [];
+      let total = 0;
+      const lines = items.map((it) => {
+        const qty = Number(it.quantity) || 1;
+        const price = Number(it.unit_price) * qty;
+        if (Number.isFinite(price)) total += price;
+        const label = clean(it.name) ? `${clean(it.name)} (${clean(it.item_id)})` : clean(it.item_id);
+        return `${qty} × ${label}${Number.isFinite(price) ? ` — ${money(price)}` : ""}`;
+      });
+      const customer = personLines(input.customer);
+      const store = clean(input.endpoint_name) || clean(input.endpoint_id);
+      const sections: ActionSummary["sections"] = [{ label: t.articles, lines: [...lines, `${t.total} : ${money(total)}`] }];
+      if (customer.length) sections.push({ label: t.customer, lines: customer });
+      if (mode === "home_delivery") {
+        const a: Input = input.delivery_address ?? {};
+        sections.push({
+          label: t.delivery,
+          lines: [
+            ...(Array.isArray(a.lines) ? a.lines.map(clean).filter(Boolean) : []),
+            [clean(a.zip_code), clean(a.city)].filter(Boolean).join(" "),
+            a.country_code ? countryName(clean(a.country_code), code) : "",
+          ].filter(Boolean),
+        });
+      } else if (store) {
+        sections.push({ label: t.store, lines: [store] });
+      }
+      return {
+        title: t.orderTitle[mode]!,
+        description: t.orderText[mode]!(store, customer[0] || t.theCustomer),
+        sections,
+      };
     }
 
     case "call_onestock_api": {
