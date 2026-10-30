@@ -120,7 +120,10 @@ export default defineEventHandler(async (event) => {
   const sourceCheck = viaApi ? "settings_api" : "database";
   if (db.result) {
     const { rows, fromEnv } = db.result;
-    checks.push({ name: sourceCheck, ok: true, detail: fromEnv ? "env-fallback" : `${db.result.loaded.all.length} · ${db.ms} ms` });
+    const readErrors = db.result.loaded.errors;
+    checks.push(readErrors.length
+      ? { name: sourceCheck, ok: false, detail: `${db.result.loaded.all.length} · ${readErrors.join(" | ")}` }
+      : { name: sourceCheck, ok: true, detail: fromEnv ? "env-fallback" : `${db.result.loaded.all.length} · ${db.ms} ms` });
     const token = rows.find((r) => r.key === "onestock_token");
     const apiRoot = rows.find((r) => r.key === "onestock_api_root");
     const stockView = rows.find((r) => r.key === "onestock_stock_request_name");

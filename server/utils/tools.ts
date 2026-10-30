@@ -2,7 +2,7 @@ import type OpenAI from "openai";
 import { missingAddressParts, sameAddress } from "./addresses";
 import { toOnestockDate } from "./dates";
 import { encodeId, onestockRequest, type OnestockResult } from "./onestock";
-import { getOnestockSettings, salesChannelFor } from "./settings";
+import { defaultSalesChannel, getOnestockSettings, salesChannelFor } from "./settings";
 import { contextQuery } from "./apiContext";
 import { logApiCall } from "./apiLog.ts";
 import { checkCall, describeOperation, findOperations, listCategories, matchOperation, safeConcretePath } from "./apiCatalog";
@@ -1156,13 +1156,17 @@ export const TOOLS: Record<string, ToolSpec> = {
       const types = mode === "reservation" ? ["ropis"] : mode === "click_and_collect" ? ["ffs", "ckc"] : ["ffs"];
       // Canal de vente : imposé par l'utilisateur, sinon celui du pays de livraison (adresse du client ou du magasin).
       const country = await deliveryCountry(siteId, mode, input);
-      const channels = (await getOnestockSettings(siteId)).salesChannels;
-      const salesChannel = input.sales_channel || salesChannelFor(channels, country);
+      const settings = await getOnestockSettings(siteId);
+      const channels = settings.salesChannels;
+      const fromCountry = salesChannelFor(channels, country);
+      // Sans canal pour ce pays : canal par défaut (DEFAULT_SALES_CHANNEL, sc001 par défaut).
+      const salesChannel = input.sales_channel || fromCountry || defaultSalesChannel();
       const channelInfo = {
         delivery_country: country ?? null,
-        sales_channel: salesChannel ?? null,
-        sales_channel_source: input.sales_channel ? "user" : salesChannel ? "sales_channels_by_country" : "none (site default)",
+        sales_channel: salesChannel,
+        sales_channel_source: input.sales_channel ? "user" : fromCountry ? "sales_channels_by_country" : "DEFAULT_SALES_CHANNEL",
         sales_channels_by_country: channels,
+        settings_lookup: settings.salesChannelsDiagnostic,
       };
       logApiCall({ method: "INFO", url: "create_order", request: null, status: 0, response: channelInfo, ms: 0, note: "sales_channel" });
       const res = await onestockRequest(siteId, "POST", "/v3/orders", compact({

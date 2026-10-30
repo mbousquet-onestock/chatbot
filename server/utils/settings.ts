@@ -15,6 +15,25 @@ export interface OnestockSettings {
   defaultLang?: string;
   /** Canal de vente par pays de livraison (clé `sales_channels_by_country`, « * » = autres pays). */
   salesChannels: Record<string, string>;
+  /** Diagnostic de la lecture de sales_channels_by_country (journal de création de commande). */
+  salesChannelsDiagnostic?: {
+    environment?: string;
+    errors: string[];
+    rows: { site_id: string; extension_id: string; environment: string; status: RowStatus; value: string | null }[];
+  };
+}
+
+/** Canal de vente utilisé quand aucun n'est trouvé pour le pays de livraison (DEFAULT_SALES_CHANNEL, défaut sc001). */
+export const defaultSalesChannel = () => env("DEFAULT_SALES_CHANNEL") ?? "sc001";
+
+function salesChannelsDiagnostic(loaded: LoadedSettings | undefined, error?: string): OnestockSettings["salesChannelsDiagnostic"] {
+  return {
+    environment: loaded?.environment,
+    errors: [...(loaded?.errors ?? []), ...(error ? [error] : [])],
+    rows: (loaded?.all ?? [])
+      .filter((r) => r.key === "sales_channels_by_country")
+      .map((r) => ({ site_id: r.site_id, extension_id: r.extension_id, environment: r.environment, status: loaded!.status(r), value: r.value })),
+  };
 }
 
 const KEYS = ["onestock_token", "onestock_api_root", "onestock_stock_request_name", "default_lang", "sales_channels_by_country"] as const;
@@ -159,17 +178,39 @@ function toStored(r: Record<string, unknown>): StoredSetting {
 }
 
 /** Toutes les lignes des clés utiles au chatbot, depuis la source configurée. */
-async function fetchAllRows(source: SettingsSource): Promise<StoredSetting[]> {
+async function fetchAllRows(
+  source: SettingsSource,
+  keys: readonly string[] = KEYS,
+  extensionId?: string,
+  errors: string[] = [],
+): Promise<StoredSetting[]> {
   const environment = env("ONESTOCK_ENVIRONMENT");
   if (source === "api") {
-    const lists = await Promise.all(
-      KEYS.map((key) => {
-        // Pas de filtre d'environment ici : selectRows l'applique, et le diagnostic montre les lignes écartées.
-        const qs = new URLSearchParams({ key, decrypt: "1", limit: "5000" });
-        return settingsApiFetch(`?${qs}`);
-      }),
-    );
-    const rows = lists.flatMap((d) => (Array.isArray(d.settings) ? d.settings : []).map((r) => toStored(r as Record<string, unknown>)));
+    // Une requête par clé (et par extension du contexte) : une clé en erreur n'empêche pas de lire les autres.
+    // Pas de filtre d'environment ici : selectRows l'applique, et le diagnostic montre les lignes écartées.
+    const queries = keys.flatMap((key) => [
+      new URLSearchParams({ key, decrypt: "1", limit: "5000" }),
+      ...(extensionId ? [new URLSearchParams({ key, extension_id: extensionId, decrypt: "1", limit: "5000" })] : []),
+    ]);
+    const lists = await Promise.allSettled(queries.map((qs) => settingsApiFetch(`?${qs}`)));
+    const seen = new Set<string>();
+    const rows: StoredSetting[] = [];
+    lists.forEach((l, i) => {
+      if (l.status === "rejected") {
+        const msg = `${queries[i]!.get("key")}${queries[i]!.get("extension_id") ? ` (extension_id ${queries[i]!.get("extension_id")})` : ""}: ${l.reason instanceof Error ? l.reason.message : String(l.reason)}`;
+        console.warn("[settings] list failed", msg);
+        errors.push(msg);
+        return;
+      }
+      for (const raw of Array.isArray(l.value.settings) ? l.value.settings : []) {
+        const r = toStored(raw as Record<string, unknown>);
+        const id = `${r.key}|${r.site_id}|${r.extension_id}|${r.environment}`;
+        if (!seen.has(id)) {
+          seen.add(id);
+          rows.push(r);
+        }
+      }
+    });
     // Token sans valeur dans la liste : lecture de la ligne exacte par GET /item?decrypt=1.
     await Promise.all(rows.filter((r) => r.hidden).map(async (r) => {
       try {
@@ -265,15 +306,18 @@ export interface LoadedSettings {
   environment?: string;
   environmentSource?: "variable" | "parent_url" | "api_root";
   status: (r: StoredSetting) => RowStatus;
+  /** Erreurs de lecture (par clé), sans bloquer les autres clés. */
+  errors: string[];
 }
 
-/** Lit la configuration du site depuis la source configurée. */
-export async function loadSettings(siteId: string): Promise<LoadedSettings> {
+/** Lit la configuration du site depuis la source configurée (toutes les clés, ou celles indiquées). */
+export async function loadSettings(siteId: string, keys: readonly string[] = KEYS): Promise<LoadedSettings> {
   const source = settingsSource();
   if (!source) throw new Error("No settings source: set SETTINGS_API_URL + SETTINGS_API_KEY (or DATABASE_URL)");
-  const all = await fetchAllRows(source);
   const ctx = currentApiContext();
-  return { source, all, ...selectRows(all, siteId, ctx.parentUrl ? new URL(ctx.parentUrl).origin : undefined, ctx.extensionId) };
+  const errors: string[] = [];
+  const all = await fetchAllRows(source, keys, ctx.extensionId, errors);
+  return { source, all, errors, ...selectRows(all, siteId, ctx.parentUrl ? new URL(ctx.parentUrl).origin : undefined, ctx.extensionId) };
 }
 
 /** Lignes retenues pour un site (une par clé). */
@@ -384,14 +428,21 @@ export async function getOnestockSettings(siteId: string): Promise<OnestockSetti
     if (!creds.apiRoot) {
       throw createError({ statusCode: 500, statusMessage: `No OneStock API URL for ${ctx.parentUrl} (api_root not returned by the Settings API)` });
     }
-    // Autres réglages (vue de stock, langue) : lignes de la table, facultatives.
-    const loaded = await loadSettings(siteId).catch(() => undefined);
+    // Autres réglages (vue de stock, langue, canaux de vente) : lignes de la table, facultatives. Le token et
+    // l'URL d'API viennent du parent_url : inutile de les relire ici.
+    let loadError: string | undefined;
+    const loaded = await loadSettings(siteId, KEYS.filter((k) => k !== "onestock_token" && k !== "onestock_api_root")).catch((err) => {
+      loadError = err instanceof Error ? err.message : String(err);
+      console.error("[settings] read failed", err);
+      return undefined;
+    });
     const value = {
       token: creds.token,
       apiRoot: normalizeApiRoot(creds.apiRoot),
       stockRequestName: loaded?.used.get("onestock_stock_request_name")?.value?.trim() || DEFAULT_STOCK_REQUEST_NAME,
       defaultLang: loaded?.used.get("default_lang")?.value?.trim() || undefined,
       salesChannels: parseSalesChannels(loaded?.used.get("sales_channels_by_country")?.value),
+      salesChannelsDiagnostic: salesChannelsDiagnostic(loaded, loadError),
     };
     cache.set(cacheKey, { at: Date.now(), value });
     return value;
@@ -431,7 +482,7 @@ export async function getOnestockSettings(siteId: string): Promise<OnestockSetti
   const stockRequestName = loaded.used.get("onestock_stock_request_name")?.value?.trim() || DEFAULT_STOCK_REQUEST_NAME;
   const defaultLang = loaded.used.get("default_lang")?.value?.trim() || undefined;
   const salesChannels = parseSalesChannels(loaded.used.get("sales_channels_by_country")?.value);
-  const value = { token: plain, apiRoot: normalizeApiRoot(apiRoot), stockRequestName, defaultLang, salesChannels };
+  const value = { token: plain, apiRoot: normalizeApiRoot(apiRoot), stockRequestName, defaultLang, salesChannels, salesChannelsDiagnostic: salesChannelsDiagnostic(loaded) };
   cache.set(cacheKey, { at: Date.now(), value });
   return value;
 }

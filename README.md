@@ -186,6 +186,8 @@ Variables d'environnement (voir `.env.example`) :
 |---|---|
 | `SETTINGS_API_URL` | URL de l'API Settings de l'application Extensions, ex. `https://extensions-lemon.vercel.app/api/settings` (source recommandée) |
 | `SETTINGS_API_KEY` | Clé d'API du chatbot, ajoutée à `SETTINGS_API_KEYS` de l'application Extensions |
+| `DEFAULT_SALES_CHANNEL` | *Optionnel.* Canal de vente des commandes créées quand aucun n'est trouvé pour le pays de livraison (défaut `sc001`) |
+| `CHAT_API_LOGS` | *Optionnel.* `false` masque les « Détails techniques » (journal des appels API) |
 | `SETTINGS_EXTENSION_ID` | *Optionnel.* `extension_id` propre au chatbot dans `settings`, prioritaire sur `*` |
 | `DATABASE_URL` | *Sans API Settings.* Accès direct à la base contenant `settings` (`POSTGRES_URL` accepté aussi) |
 | `SETTINGS_ENCRYPTION_KEY` | *Sans API Settings.* Clé de déchiffrement des settings (identique à l'application Extensions) |
@@ -240,7 +242,7 @@ L'onglet Paramètres liste toutes les lignes avec la raison pour laquelle chacun
 (`create_order`) selon le pays de livraison : pays de l'adresse du client (livraison à domicile) ou du magasin de
 retrait (réservation, retrait en magasin). Format JSON `{"FR": "sc_fr", "BE": "sc_be", "*": "sc_web"}` ou liste
 `FR:sc_fr, BE:sc_be, *:sc_web` ; `*` s'applique aux autres pays. Sans ligne (ou sans pays correspondant ni `*`),
-OneStock applique le canal par défaut du site. Un canal imposé explicitement par l'utilisateur reste prioritaire.
+le canal `DEFAULT_SALES_CHANNEL` est utilisé (`sc001` par défaut). Un canal imposé explicitement par l'utilisateur reste prioritaire.
 
 `onestock_stock_request_name` (facultative) est la vue de stock OneStock (OMC > Configuration > Stock > Stock
 Queries) utilisée pour consulter le stock ; sans ligne dans `settings`, la vue `detailed` est utilisée. `default_lang` (facultative) est la langue des fiches
