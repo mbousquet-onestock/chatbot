@@ -5,6 +5,7 @@ import { TOOL_DEFINITIONS, isWriteTool, runTool, validateTool, type StoreMap, ty
 import { PRODUCT_TOOLS, enrichProducts, extractProducts, type ProductList } from "../utils/products";
 import { getOnestockSettings } from "../utils/settings";
 import { onestockRequest } from "../utils/onestock";
+import { apiLogsEnabled, withApiLog, type ApiLogEntry } from "../utils/apiLog";
 
 type MessageParam = OpenAI.Chat.ChatCompletionMessageParam;
 type ToolCall = OpenAI.Chat.ChatCompletionMessageFunctionToolCall;
@@ -26,6 +27,7 @@ type ChatEvent =
   | { type: "notice"; notice: ToolNotice }
   | { type: "products"; list: ProductList }
   | { type: "stores"; map: StoreMap }
+  | { type: "api_log"; id: string; tool: { name: string; input: unknown; output: unknown; error: boolean }; entries: ApiLogEntry[] }
   | { type: "confirm"; actions: { id: string; name: string; input: unknown }[] }
   | { type: "done"; messages: MessageParam[]; stop_reason: string | null }
   | { type: "error"; message: string };
@@ -44,6 +46,15 @@ function parseArguments(call: ToolCall): Record<string, unknown> {
     return value && typeof value === "object" ? value : {};
   } catch {
     return {};
+  }
+}
+
+/** Contenu JSON d'un résultat d'outil (ou texte brut). */
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
   }
 }
 
@@ -112,8 +123,14 @@ export default defineEventHandler(async (event) => {
               return { role: "tool", tool_call_id: call.id, content: "L'utilisateur a refusé cette action : elle n'a pas été exécutée." };
             }
             send({ type: "tool", id: call.id, name, input: args, status: "running" });
-            const res = await runTool(session.siteId, name, args, { userId: session.userId, lang: body.context?.lang });
+            // Appels à l'API OneStock de cet outil (payload, statut, réponse), affichés pour le diagnostic.
+            const { result: res, entries } = await withApiLog(() =>
+              runTool(session.siteId, name, args, { userId: session.userId, lang: body.context?.lang }),
+            );
             send({ type: "tool", id: call.id, name, input: args, status: res.isError ? "error" : "done" });
+            if (apiLogsEnabled()) {
+              send({ type: "api_log", id: call.id, tool: { name, input: args, output: safeJson(res.content), error: res.isError }, entries });
+            }
             if (res.notice) send({ type: "notice", notice: res.notice });
             if (res.stores) send({ type: "stores", map: res.stores });
             if (!res.isError && PRODUCT_TOOLS.has(name)) {

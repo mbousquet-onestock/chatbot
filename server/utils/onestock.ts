@@ -1,4 +1,5 @@
 import { getOnestockSettings } from "./settings";
+import { logApiCall } from "./apiLog.ts";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -43,7 +44,16 @@ export async function onestockRequest(
   path: string,
   body: Record<string, unknown> = {},
 ): Promise<OnestockResult> {
-  const res = await onestockFetch(siteId, method, path, body);
+  const start = Date.now();
+  const { apiRoot } = await getOnestockSettings(siteId);
+  const request = { ...body, site_id: siteId, token: "masked" };
+  let res: Response;
+  try {
+    res = await onestockFetch(siteId, method, path, body);
+  } catch (err) {
+    logApiCall({ method, url: `${apiRoot}${path}`, request, status: 0, response: null, ms: Date.now() - start, error: err instanceof Error ? err.message : String(err) });
+    throw err;
+  }
   const text = await res.text();
   let data: unknown = text;
   try {
@@ -51,6 +61,7 @@ export async function onestockRequest(
   } catch {
     // corps non JSON : renvoyé tel quel
   }
+  logApiCall({ method, url: `${apiRoot}${path}`, request, status: res.status, response: data, ms: Date.now() - start });
   return { ok: res.ok, status: res.status, data };
 }
 

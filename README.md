@@ -123,6 +123,14 @@ Le fond de carte est OpenStreetMap par défaut ; pour un autre fournisseur de tu
 `NUXT_PUBLIC_MAP_TILES_URL` (modèle `…/{z}/{x}/{y}.png`) et `NUXT_PUBLIC_MAP_ATTRIBUTION`. Les serveurs de tuiles
 d'OpenStreetMap sont limités à un usage modéré : pour un usage intensif, utiliser un fournisseur dédié.
 
+### Détails techniques (journal des appels)
+
+Sous les outils de chaque réponse, un bloc repliable « Détails techniques » montre, pour chaque outil : ses
+paramètres, le résultat transmis à l'assistant et chaque appel à l'API OneStock (méthode, URL, payload envoyé,
+statut, réponse, durée). Le token et les autres secrets sont masqués ; les gros contenus sont tronqués. La
+création de commande y ajoute le pays de livraison détecté et le canal de vente retenu. « Copier tout » copie le
+journal en JSON. `CHAT_API_LOGS=false` (Vercel) désactive ce bloc.
+
 ### Langue des réponses
 
 L'assistant répond dans la langue de la question (dernier message de l'utilisateur), quelle que soit la langue

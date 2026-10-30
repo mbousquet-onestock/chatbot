@@ -2,10 +2,24 @@ import type OpenAI from "openai";
 
 type MessageParam = OpenAI.Chat.ChatCompletionMessageParam;
 
+/** Appel à l'API OneStock journalisé (voir ApiLogEntry côté serveur). */
+export interface ApiLogEntry {
+  method: string;
+  url: string;
+  request: unknown;
+  status: number;
+  response: unknown;
+  ms: number;
+  error?: string;
+  note?: string;
+}
+
 export interface ToolActivity {
   id: string;
   name: string;
   status: "running" | "done" | "error" | "declined";
+  /** Paramètres, résultat et appels API de l'outil (détails techniques). */
+  log?: { tool: { name: string; input: unknown; output: unknown; error: boolean }; entries: ApiLogEntry[] };
 }
 
 export interface PendingAction {
@@ -149,6 +163,11 @@ export function useChat() {
       case "notice":
         reply.notices = [...(reply.notices ?? []), event.notice];
         break;
+      case "api_log": {
+        const tool = reply.tools.find((t) => t.id === event.id);
+        if (tool) tool.log = { tool: event.tool, entries: event.entries };
+        break;
+      }
       case "products":
         reply.products = [...(reply.products ?? []), event.list];
         break;

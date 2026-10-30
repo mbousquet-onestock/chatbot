@@ -64,6 +64,7 @@ const statusIcon = { running: "loader", done: "check", error: "error-outline", d
           :text="t.tools[tool.name] ?? tool.name"
         />
       </div>
+      <ApiLogs v-if="item.role === 'assistant'" :tools="item.tools" :lang="lang" />
       <p v-if="item.role === 'user'" class="user-text os-label-s">{{ item.text }}</p>
       <div v-else-if="item.text" class="markdown os-label-s" v-html="html" />
       <div v-else-if="streaming && !item.error" class="placeholder">

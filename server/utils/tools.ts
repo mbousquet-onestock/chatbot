@@ -4,6 +4,7 @@ import { toOnestockDate } from "./dates";
 import { encodeId, onestockRequest, type OnestockResult } from "./onestock";
 import { getOnestockSettings, salesChannelFor } from "./settings";
 import { contextQuery } from "./apiContext";
+import { logApiCall } from "./apiLog.ts";
 import { checkCall, describeOperation, findOperations, listCategories, matchOperation, safeConcretePath } from "./apiCatalog";
 
 type Input = Record<string, any>;
@@ -1155,7 +1156,15 @@ export const TOOLS: Record<string, ToolSpec> = {
       const types = mode === "reservation" ? ["ropis"] : mode === "click_and_collect" ? ["ffs", "ckc"] : ["ffs"];
       // Canal de vente : imposé par l'utilisateur, sinon celui du pays de livraison (adresse du client ou du magasin).
       const country = await deliveryCountry(siteId, mode, input);
-      const salesChannel = input.sales_channel || salesChannelFor((await getOnestockSettings(siteId)).salesChannels, country);
+      const channels = (await getOnestockSettings(siteId)).salesChannels;
+      const salesChannel = input.sales_channel || salesChannelFor(channels, country);
+      const channelInfo = {
+        delivery_country: country ?? null,
+        sales_channel: salesChannel ?? null,
+        sales_channel_source: input.sales_channel ? "user" : salesChannel ? "sales_channels_by_country" : "none (site default)",
+        sales_channels_by_country: channels,
+      };
+      logApiCall({ method: "INFO", url: "create_order", request: null, status: 0, response: channelInfo, ms: 0, note: "sales_channel" });
       const res = await onestockRequest(siteId, "POST", "/v3/orders", compact({
         id_format: input.id_format || undefined,
         order: compact({
@@ -1167,7 +1176,8 @@ export const TOOLS: Record<string, ToolSpec> = {
           sales_channel: salesChannel || undefined,
         }),
       }));
-      if (!res.ok) return res;
+      // En cas d'échec, le modèle sait quel pays et quel canal ont été utilisés.
+      if (!res.ok) return { ...res, data: { response: res.data, ...channelInfo } };
       const data = res.data as Input | null;
       const orderId = String(data?.id ?? data?.order?.id ?? data?.order_id ?? "");
       return {
